@@ -15,7 +15,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
       {isOpen && (
         <div className="modal-overlay" onClick={onClose}>
           <motion.div
-            className={`glass w-full ${sizes[size]} max-h-[90vh] overflow-y-auto`}
+            className={`glass w-full flex flex-col ${sizes[size]} max-h-[90vh] my-auto`}
             style={{ borderRadius: 20 }}
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -25,7 +25,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
           >
             {/* Header */}
             {title && (
-              <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: 'var(--border-glass)' }}>
+              <div className="flex items-center justify-between p-6 border-b shrink-0" style={{ borderColor: 'var(--border-glass)' }}>
                 <h2 className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk' }}>{title}</h2>
                 <button
                   onClick={onClose}
@@ -37,7 +37,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
               </div>
             )}
             {/* Body */}
-            <div className="p-6">{children}</div>
+            <div className="p-6 overflow-y-auto">{children}</div>
           </motion.div>
         </div>
       )}

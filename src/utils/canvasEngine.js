@@ -24,14 +24,20 @@ export const drawPortraitStrip = async (photos, options = {}) => {
   } = options
 
   const photoCount = photos.length
-  const totalHeight = padding * 2 + photoCount * photoHeight + (photoCount - 1) * gap + (title ? 60 : 0) + 40
+  const isCustom = !!options.overlay_url
+  const titleSpace = (title && !isCustom) ? 60 : 0
+  const footerSpace = isCustom ? 0 : 40
+  const totalHeight = padding * 2 + photoCount * photoHeight + (photoCount - 1) * gap + titleSpace + footerSpace
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = totalHeight
   const ctx = canvas.getContext('2d')
+  const isCustom = !!options.overlay_url
 
   // Background
-  if (template === 'gradient') {
+  if (isCustom) {
+    ctx.fillStyle = '#ffffff'
+  } else if (template === 'gradient') {
     const grad = ctx.createLinearGradient(0, 0, width, totalHeight)
     grad.addColorStop(0, '#1a0533')
     grad.addColorStop(1, '#0a0a2e')
@@ -43,23 +49,25 @@ export const drawPortraitStrip = async (photos, options = {}) => {
   }
   ctx.fillRect(0, 0, width, totalHeight)
 
-  // Border accent
-  ctx.strokeStyle = borderColor
-  ctx.lineWidth = 3
-  ctx.strokeRect(8, 8, width - 16, totalHeight - 16)
+  if (!isCustom) {
+    // Border accent
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 3
+    ctx.strokeRect(8, 8, width - 16, totalHeight - 16)
 
-  // Corner decorations
-  const corners = [[8, 8], [width - 8, 8], [8, totalHeight - 8], [width - 8, totalHeight - 8]]
-  corners.forEach(([x, y]) => {
-    ctx.fillStyle = borderColor
-    ctx.beginPath()
-    ctx.arc(x, y, 6, 0, Math.PI * 2)
-    ctx.fill()
-  })
+    // Corner decorations
+    const corners = [[8, 8], [width - 8, 8], [8, totalHeight - 8], [width - 8, totalHeight - 8]]
+    corners.forEach(([x, y]) => {
+      ctx.fillStyle = borderColor
+      ctx.beginPath()
+      ctx.arc(x, y, 6, 0, Math.PI * 2)
+      ctx.fill()
+    })
+  }
 
   // Title
   let yOffset = padding
-  if (title) {
+  if (title && !isCustom) {
     ctx.fillStyle = '#ffffff'
     ctx.font = 'bold 22px Inter, sans-serif'
     ctx.textAlign = 'center'
@@ -73,34 +81,51 @@ export const drawPortraitStrip = async (photos, options = {}) => {
     const photoX = padding
     const photoW = width - padding * 2
     ctx.save()
-    // Rounded corners for photo
-    roundRect(ctx, photoX, yOffset, photoW, photoHeight, 8)
-    ctx.clip()
+    if (!isCustom) {
+      // Rounded corners for photo
+      roundRect(ctx, photoX, yOffset, photoW, photoHeight, 8)
+      ctx.clip()
+    }
     ctx.drawImage(img, photoX, yOffset, photoW, photoHeight)
     ctx.restore()
-    // Photo border
-    ctx.strokeStyle = 'rgba(168,85,247,0.3)'
-    ctx.lineWidth = 1
-    roundRect(ctx, photoX, yOffset, photoW, photoHeight, 8)
-    ctx.stroke()
-    // Photo number badge
-    ctx.fillStyle = 'rgba(168,85,247,0.8)'
-    ctx.beginPath()
-    ctx.arc(photoX + 18, yOffset + 18, 14, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.font = 'bold 12px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(`${i + 1}`, photoX + 18, yOffset + 22)
+
+    if (!isCustom) {
+      // Photo border
+      ctx.strokeStyle = 'rgba(168,85,247,0.3)'
+      ctx.lineWidth = 1
+      roundRect(ctx, photoX, yOffset, photoW, photoHeight, 8)
+      ctx.stroke()
+      // Photo number badge
+      ctx.fillStyle = 'rgba(168,85,247,0.8)'
+      ctx.beginPath()
+      ctx.arc(photoX + 18, yOffset + 18, 14, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.font = 'bold 12px Inter, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${i + 1}`, photoX + 18, yOffset + 22)
+    }
     yOffset += photoHeight + gap
   }
 
   // Footer
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'
-  ctx.font = '12px Inter, sans-serif'
-  ctx.textAlign = 'center'
-  const footerText = [date, watermark].filter(Boolean).join(' • ')
-  ctx.fillText(footerText || '✨ Captured with Photobooth', width / 2, yOffset + 16)
+  if (!isCustom) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'
+    ctx.font = '12px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    const footerText = [date, watermark].filter(Boolean).join(' • ')
+    ctx.fillText(footerText || '✨ Captured with Photobooth', width / 2, yOffset + 16)
+  }
+
+  // Custom Overlay
+  if (options.overlay_url) {
+    try {
+      const overlay = await loadImage(options.overlay_url)
+      ctx.drawImage(overlay, 0, 0, width, totalHeight)
+    } catch (e) {
+      console.error('Failed to load overlay', e)
+    }
+  }
 
   return canvas.toDataURL('image/jpeg', 0.92)
 }
@@ -122,18 +147,25 @@ export const draw4x6Layout = async (photos, options = {}) => {
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
+  const isCustom = !!options.overlay_url
 
   // Background
-  const grad = ctx.createLinearGradient(0, 0, width, height)
-  grad.addColorStop(0, '#1a0533')
-  grad.addColorStop(1, '#0a1628')
-  ctx.fillStyle = template === 'gradient' ? grad : bgColor
+  if (isCustom) {
+    ctx.fillStyle = '#ffffff'
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, width, height)
+    grad.addColorStop(0, '#1a0533')
+    grad.addColorStop(1, '#0a1628')
+    ctx.fillStyle = template === 'gradient' ? grad : bgColor
+  }
   ctx.fillRect(0, 0, width, height)
 
-  // Border
-  ctx.strokeStyle = borderColor
-  ctx.lineWidth = 2
-  ctx.strokeRect(6, 6, width - 12, height - 12)
+  if (!isCustom) {
+    // Border
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 2
+    ctx.strokeRect(6, 6, width - 12, height - 12)
+  }
 
   const padding = 20
   const gap = 10
@@ -152,45 +184,62 @@ export const draw4x6Layout = async (photos, options = {}) => {
     const y = padding + row * (cellH + gap)
     const img = await loadImage(photos[i])
     ctx.save()
-    roundRect(ctx, x, y, cellW, cellH, 6)
-    ctx.clip()
+    if (!isCustom) {
+      roundRect(ctx, x, y, cellW, cellH, 6)
+      ctx.clip()
+    }
     ctx.drawImage(img, x, y, cellW, cellH)
     ctx.restore()
-    ctx.strokeStyle = 'rgba(168,85,247,0.3)'
-    ctx.lineWidth = 1
-    roundRect(ctx, x, y, cellW, cellH, 6)
-    ctx.stroke()
+
+    if (!isCustom) {
+      ctx.strokeStyle = 'rgba(168,85,247,0.3)'
+      ctx.lineWidth = 1
+      roundRect(ctx, x, y, cellW, cellH, 6)
+      ctx.stroke()
+    }
   }
 
-  // Sidebar
-  const sbX = width - padding - sidebarW
-  ctx.fillStyle = 'rgba(168,85,247,0.08)'
-  roundRect(ctx, sbX, padding, sidebarW, height - padding * 2, 10)
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(168,85,247,0.2)'
-  ctx.lineWidth = 1
-  roundRect(ctx, sbX, padding, sidebarW, height - padding * 2, 10)
-  ctx.stroke()
+  if (!isCustom) {
+    // Sidebar
+    const sbX = width - padding - sidebarW
+    ctx.fillStyle = 'rgba(168,85,247,0.08)'
+    roundRect(ctx, sbX, padding, sidebarW, height - padding * 2, 10)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(168,85,247,0.2)'
+    ctx.lineWidth = 1
+    roundRect(ctx, sbX, padding, sidebarW, height - padding * 2, 10)
+    ctx.stroke()
 
-  // Sidebar content
-  ctx.save()
-  ctx.translate(sbX + sidebarW / 2, padding + (height - padding * 2) / 2)
-  ctx.rotate(-Math.PI / 2)
-  ctx.fillStyle = '#a855f7'
-  ctx.font = 'bold 18px Inter, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.fillText(title || 'PHOTOBOOTH', 0, 0)
-  ctx.restore()
+    // Sidebar content
+    ctx.save()
+    ctx.translate(sbX + sidebarW / 2, padding + (height - padding * 2) / 2)
+    ctx.rotate(-Math.PI / 2)
+    ctx.fillStyle = '#a855f7'
+    ctx.font = 'bold 18px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(title || 'PHOTOBOOTH', 0, 0)
+    ctx.restore()
 
-  ctx.fillStyle = 'rgba(255,255,255,0.3)'
-  ctx.font = '11px Inter, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.fillText(date || new Date().toLocaleDateString(), sbX + sidebarW / 2, height - padding - 10)
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
+    ctx.font = '11px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(date || new Date().toLocaleDateString(), sbX + sidebarW / 2, height - padding - 10)
 
-  if (watermark) {
-    ctx.fillStyle = 'rgba(255,255,255,0.15)'
-    ctx.font = '10px Inter, sans-serif'
-    ctx.fillText(watermark, sbX + sidebarW / 2, height - padding - 26)
+    if (watermark) {
+      ctx.fillStyle = 'rgba(255,255,255,0.15)'
+      ctx.font = '10px Inter, sans-serif'
+      ctx.fillText(watermark, sbX + sidebarW / 2, height - padding - 26)
+    }
+  }
+
+  // Custom Overlay
+  if (options.overlay_url) {
+    try {
+      const overlay = await loadImage(options.overlay_url)
+      ctx.drawImage(overlay, 0, 0, width, height)
+    } catch (e) {
+      console.error('Failed to load overlay', e)
+    }
   }
 
   return canvas.toDataURL('image/jpeg', 0.92)
@@ -222,12 +271,13 @@ const roundRect = (ctx, x, y, w, h, r) => {
 
 // Generate composite photo
 export const generatePhotoComposite = async (rawPhotos, session, username) => {
-  const { layout = 'strip', template = 'classic', watermark = '' } = session || {}
+  const { layout = 'strip', template = 'classic', watermark = '', overlay_url = '' } = session || {}
   const options = {
     title: session?.name || 'Photobooth',
     date: new Date().toLocaleDateString('id-ID', { dateStyle: 'long' }),
     watermark,
     template,
+    overlay_url,
     borderColor: '#a855f7',
   }
   if (layout === '4x6') {

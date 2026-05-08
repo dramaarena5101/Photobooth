@@ -4,17 +4,18 @@ import { useAppStore } from '../store/useAppStore'
 import Modal from '../components/Modal'
 import {
   Plus, Search, Filter, Edit2, Trash2, ExternalLink,
-  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown, Images
+  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown, Images, Upload
 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
+import { uploadToStorage, getPublicUrl } from '../utils/helpers'
 
 const TEMPLATES = ['classic', 'gradient', 'dark', 'minimal', 'neon']
 const LAYOUTS = ['strip', '4x6']
 
 const defaultForm = {
   name: '', passcode: '', drive_url: '', template: 'classic',
-  layout: 'strip', watermark: '', status: 'active', photo_count: 0
+  layout: 'strip', watermark: '', status: 'active', photo_count: 0, overlay_url: ''
 }
 
 export default function Sessions({ onStartBooth }) {
@@ -28,6 +29,7 @@ export default function Sessions({ onStartBooth }) {
   const [showPasscode, setShowPasscode] = useState({})
   const [copiedId, setCopiedId] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [uploadingTemplate, setUploadingTemplate] = useState(false)
 
   useEffect(() => { fetchSessions() }, [])
 
@@ -89,6 +91,27 @@ export default function Sessions({ onStartBooth }) {
   const handleViewGallery = (sessionId) => {
     setGalleryFilterSession(sessionId)
     setActiveRoute('gallery')
+  }
+
+  const handleTemplateUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (!file.type.includes('png')) {
+      toast.error('Template must be a transparent PNG file')
+      return
+    }
+    setUploadingTemplate(true)
+    try {
+      const ts = Date.now()
+      const path = `templates/frame_${ts}.png`
+      await uploadToStorage('photobooth', path, file)
+      const url = getPublicUrl('photobooth', path)
+      setForm(f => ({ ...f, overlay_url: url }))
+      toast.success('Custom frame uploaded!')
+    } catch (err) {
+      toast.error('Failed to upload template')
+    }
+    setUploadingTemplate(false)
   }
 
   return (
@@ -331,6 +354,28 @@ export default function Sessions({ onStartBooth }) {
                 {LAYOUTS.map(l => <option key={l} value={l} className="bg-gray-900">{l === 'strip' ? 'Portrait Strip' : '4×6 Grid'}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
+              Custom Frame / Template (PNG)
+            </label>
+            <div className="flex gap-2 items-center">
+              <input type="file" id="template-upload" accept=".png" className="hidden" onChange={handleTemplateUpload} disabled={uploadingTemplate} />
+              <button onClick={() => document.getElementById('template-upload').click()} disabled={uploadingTemplate}
+                className="btn-secondary px-4 py-3 rounded-xl text-sm flex items-center justify-center gap-2 flex-1">
+                {uploadingTemplate ? <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /> : <Upload size={16} />}
+                {uploadingTemplate ? 'Uploading...' : form.overlay_url ? 'Change Custom Frame' : 'Upload PNG Frame'}
+              </button>
+              {form.overlay_url && (
+                <button onClick={() => setForm(f => ({ ...f, overlay_url: '' }))} className="btn-danger p-3 rounded-xl text-sm" title="Remove custom frame">
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+            {form.overlay_url && <p className="text-xs mt-2 text-green-400">Custom frame active!</p>}
+            <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+              If uploaded, this PNG will be overlaid on top of the photos. Make sure it has transparent cutouts.
+            </p>
           </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
