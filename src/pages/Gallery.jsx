@@ -8,9 +8,8 @@ import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 
 export default function Gallery() {
-  const { photos, fetchPhotos, photosLoading, sessions } = useAppStore()
+  const { photos, fetchPhotos, photosLoading, sessions, galleryFilterSession, setGalleryFilterSession } = useAppStore()
   const [search, setSearch] = useState('')
-  const [filterSession, setFilterSession] = useState('all')
   const [filterType, setFilterType] = useState('all')
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [showQR, setShowQR] = useState(false)
@@ -20,7 +19,7 @@ export default function Gallery() {
   const filtered = photos.filter(p => {
     const matchSearch = p.username?.toLowerCase().includes(search.toLowerCase()) ||
       p.filename?.toLowerCase().includes(search.toLowerCase())
-    const matchSession = filterSession === 'all' || p.session_id === filterSession
+    const matchSession = galleryFilterSession === 'all' || p.session_id === galleryFilterSession
     const matchType = filterType === 'all' || p.type === filterType
     return matchSearch && matchSession && matchType
   })
@@ -61,7 +60,7 @@ export default function Gallery() {
           ))}
         </div>
         <select className="input-glass px-3 py-2 rounded-xl text-sm"
-          value={filterSession} onChange={e => setFilterSession(e.target.value)}>
+          value={galleryFilterSession} onChange={e => setGalleryFilterSession(e.target.value)}>
           <option value="all">All Sessions</option>
           {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -87,7 +86,7 @@ export default function Gallery() {
                 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: i * 0.03 }} whileHover={{ scale: 1.02 }}
                 onClick={() => setSelectedPhoto(photo)}>
-                <img src={photo.url || photo.raw_urls?.[0] || 'https://via.placeholder.com/300x400'}
+                <img src={photo.raw_urls?.[0] || photo.url || 'https://via.placeholder.com/300x400'}
                   alt={photo.filename} className="w-full h-full object-cover" />
                 {/* Hover overlay */}
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-all duration-200 flex flex-col justify-end p-3"
@@ -125,7 +124,7 @@ export default function Gallery() {
         {selectedPhoto && (
           <div className="space-y-4">
             <div className="flex justify-center rounded-xl overflow-hidden" style={{ background: '#000', maxHeight: 480 }}>
-              <img src={selectedPhoto.url || selectedPhoto.raw_urls?.[0]} alt="detail"
+              <img src={selectedPhoto.raw_urls?.[0] || selectedPhoto.url} alt="detail"
                 className="object-contain max-h-[480px]" />
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">

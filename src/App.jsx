@@ -18,8 +18,31 @@ const pageVariants = {
 }
 
 export default function App() {
-  const { isAdmin, sidebarOpen, activeRoute, setActiveRoute } = useAppStore()
+  const { isAdmin, sidebarOpen, activeRoute, setActiveRoute, logout, inactivityTimeout } = useAppStore()
   const [boothSession, setBoothSession] = useState(null)
+
+  // Auto-logout due to inactivity
+  useEffect(() => {
+    if (!isAdmin) return
+    let timeoutId
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        logout()
+        toast('Logged out due to inactivity', { icon: '💤' })
+      }, inactivityTimeout * 60 * 1000)
+    }
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
+    events.forEach(e => document.addEventListener(e, resetTimer))
+    resetTimer()
+
+    return () => {
+      clearTimeout(timeoutId)
+      events.forEach(e => document.removeEventListener(e, resetTimer))
+    }
+  }, [isAdmin, inactivityTimeout, logout])
 
   // Sidebar width classes
   const sidebarClasses = sidebarOpen ? 'md:ml-[240px]' : 'md:ml-[72px]'

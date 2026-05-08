@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Settings as SettingsIcon, Database, Bell, Shield, Globe, Save, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useAppStore } from '../store/useAppStore'
 
 const SUPABASE_SQL = `-- Run this SQL in your Supabase SQL Editor
 -- 1. Sessions table
@@ -51,15 +52,18 @@ CREATE POLICY "Allow all" ON photos FOR ALL USING (true);
 -- Create a public bucket named: photobooth`
 
 export default function SettingsPage() {
+  const { inactivityTimeout, setInactivityTimeout } = useAppStore()
   const [supabaseUrl, setSupabaseUrl] = useState(import.meta.env.VITE_SUPABASE_URL || '')
   const [supabaseKey, setSupabaseKey] = useState(import.meta.env.VITE_SUPABASE_ANON_KEY || '')
   const [adminPass, setAdminPass] = useState(localStorage.getItem('admin_pass') || 'admin123')
+  const [timeoutVal, setTimeoutVal] = useState(inactivityTimeout)
   const [showSql, setShowSql] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
     setSaving(true)
     localStorage.setItem('admin_pass', adminPass)
+    setInactivityTimeout(timeoutVal)
     await new Promise(r => setTimeout(r, 800))
     setSaving(false)
     toast.success('Settings saved! Update .env file for Supabase credentials.')
@@ -90,6 +94,16 @@ export default function SettingsPage() {
             placeholder="Admin password" value={adminPass} onChange={e => setAdminPass(e.target.value)} />
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
             This password is stored locally. For production, use Supabase Auth.
+          </p>
+        </div>
+        <div className="pt-2">
+          <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
+            Auto Logout Timeout (Minutes)
+          </label>
+          <input type="number" className="input-glass w-full px-4 py-3 rounded-xl text-sm"
+            placeholder="e.g. 45" value={timeoutVal} onChange={e => setTimeoutVal(parseInt(e.target.value) || 0)} min="1" max="1440" />
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Automatically logout admin after this many minutes of inactivity.
           </p>
         </div>
       </div>

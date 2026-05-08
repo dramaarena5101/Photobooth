@@ -118,7 +118,10 @@ export default function Booth({ session, onBack }) {
         raw_urls: rawPhotos.map((_, i) => getPublicUrl('photobooth', `${cs}/RAW/${base}_raw${i + 1}.jpg`)),
         url: printUrl, type: 'print', filename: base, created_at: new Date().toISOString(),
       })
-      if (session?.id) await supabase.rpc('increment_photo_count', { session_id: session.id }).catch(() => {})
+      if (session?.id) {
+        const { error: rpcError } = await supabase.rpc('increment_photo_count', { session_id: session.id })
+        if (rpcError) console.error('RPC Error:', rpcError)
+      }
       setUploadProgress(100)
       setUploadStatus('done')
       toast.success('Photos uploaded!')

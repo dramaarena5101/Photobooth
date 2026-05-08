@@ -1,12 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  realtime: {
-    params: { eventsPerSecond: 10 }
-  }
-})
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase URL and Anon Key are missing! Check your .env file.')
+}
 
-export default supabase
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)

@@ -4,7 +4,7 @@ import { useAppStore } from '../store/useAppStore'
 import Modal from '../components/Modal'
 import {
   Plus, Search, Filter, Edit2, Trash2, ExternalLink,
-  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown
+  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown, Images
 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -18,7 +18,7 @@ const defaultForm = {
 }
 
 export default function Sessions({ onStartBooth }) {
-  const { sessions, fetchSessions, createSession, updateSession, deleteSession, sessionsLoading } = useAppStore()
+  const { sessions, fetchSessions, createSession, updateSession, deleteSession, sessionsLoading, setActiveRoute, setGalleryFilterSession } = useAppStore()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [showModal, setShowModal] = useState(false)
@@ -84,6 +84,11 @@ export default function Sessions({ onStartBooth }) {
     setCopiedId(id)
     toast.success('Passcode copied!')
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handleViewGallery = (sessionId) => {
+    setGalleryFilterSession(sessionId)
+    setActiveRoute('gallery')
   }
 
   return (
@@ -226,6 +231,15 @@ export default function Sessions({ onStartBooth }) {
                             whileHover={{ scale: 1.1 }}
                           >
                             <Camera size={13} />
+                          </motion.button>
+                          <motion.button
+                            onClick={() => handleViewGallery(session.id)}
+                            className="p-2 rounded-lg transition-all"
+                            style={{ padding: '6px 8px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}
+                            title="View Photos"
+                            whileHover={{ scale: 1.1 }}
+                          >
+                            <Images size={13} />
                           </motion.button>
                           <motion.button
                             onClick={() => openEdit(session)}

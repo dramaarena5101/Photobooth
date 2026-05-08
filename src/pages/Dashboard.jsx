@@ -81,7 +81,7 @@ export default function Dashboard() {
                     whileHover={{ scale: 1.03 }}
                   >
                     <img
-                      src={photo.url || photo.raw_url || 'https://via.placeholder.com/300x400/1a1a2e/a855f7?text=Photo'}
+                      src={photo.raw_urls?.[0] || photo.url || 'https://via.placeholder.com/300x400/1a1a2e/a855f7?text=Photo'}
                       alt="capture"
                       className="w-full h-full object-cover"
                     />

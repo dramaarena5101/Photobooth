@@ -5,8 +5,21 @@ export const useAppStore = create((set, get) => ({
   // Auth
   isAdmin: false,
   adminUser: null,
-  setAdmin: (user) => set({ isAdmin: true, adminUser: user }),
-  logout: () => set({ isAdmin: false, adminUser: null }),
+  setAdmin: (user) => {
+    set({ isAdmin: true, adminUser: user })
+    localStorage.setItem('admin_logged_in', 'true')
+  },
+  logout: () => {
+    set({ isAdmin: false, adminUser: null, activeRoute: 'dashboard' })
+    localStorage.removeItem('admin_logged_in')
+  },
+
+  // Settings
+  inactivityTimeout: parseInt(localStorage.getItem('inactivity_timeout')) || 45, // in minutes
+  setInactivityTimeout: (minutes) => {
+    set({ inactivityTimeout: minutes })
+    localStorage.setItem('inactivity_timeout', minutes.toString())
+  },
 
   // Sessions
   sessions: [],
@@ -113,6 +126,8 @@ export const useAppStore = create((set, get) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   activeRoute: 'dashboard',
   setActiveRoute: (route) => set({ activeRoute: route }),
+  galleryFilterSession: 'all',
+  setGalleryFilterSession: (id) => set({ galleryFilterSession: id }),
 
   // Upload queue (offline support)
   uploadQueue: [],
