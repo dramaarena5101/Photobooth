@@ -603,9 +603,9 @@ export default function Booth({ session, onBack }) {
         <div className="text-center space-y-4">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Scan to download your photos</p>
           <div className="qr-container mx-auto w-fit">
-            <QRCodeSVG value={driveUrl || window.location.href} size={200} level="H" />
+            <QRCodeSVG value={`${window.location.origin}/?share=${session?.id}&user=${encodeURIComponent(username || '')}`} size={200} level="H" />
           </div>
-          <button onClick={() => { navigator.clipboard.writeText(driveUrl || ''); toast.success('Copied!') }}
+          <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?share=${session?.id}&user=${encodeURIComponent(username || '')}`); toast.success('Copied!') }}
             className="w-full btn-secondary py-3 rounded-xl text-sm">Copy Link</button>
         </div>
       </Modal>

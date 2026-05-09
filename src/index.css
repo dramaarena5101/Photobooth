@@ -139,6 +139,7 @@ body {
   font-family: 'Inter', sans-serif;
   transition: all 0.3s ease;
   outline: none;
+  color-scheme: dark;
 }
 .input-glass:focus {
   border-color: rgba(168,85,247,0.5);
@@ -146,6 +147,12 @@ body {
   box-shadow: 0 0 0 3px rgba(168,85,247,0.1);
 }
 .input-glass::placeholder { color: var(--text-muted); }
+.input-glass option {
+  background: #0d1220;
+  color: #f1f5f9;
+}
+select.input-glass { cursor: pointer; }
+
 
 /* Animations */
 @keyframes fadeIn {

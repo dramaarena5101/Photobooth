@@ -116,11 +116,11 @@ export default function Sessions({ onStartBooth }) {
     setUploadingTemplate(false)
   }
 
-  const handleSaveSlots = async (slots) => {
+  const handleSaveSlots = async (slots, preset) => {
     if (!layoutEditorSession) return
-    await updateSession(layoutEditorSession.id, { photo_slots: slots })
+    await updateSession(layoutEditorSession.id, { photo_slots: slots, layout: preset })
     setLayoutEditorSession(null)
-    toast.success('Layout foto disimpan ke sesi!')
+    toast.success('Layout foto & resolusi disimpan ke sesi!')
   }
 
   return (
@@ -470,6 +470,7 @@ export default function Sessions({ onStartBooth }) {
           <TemplateEditor
             overlayUrl={layoutEditorSession.overlay_url}
             initialSlots={layoutEditorSession.photo_slots || []}
+            sessionLayout={layoutEditorSession.layout || 'strip'}
             onSave={handleSaveSlots}
             onClose={() => setLayoutEditorSession(null)}
           />

@@ -10,6 +10,7 @@ import Booth from './pages/Booth'
 import Gallery from './pages/Gallery'
 import Settings from './pages/Settings'
 import Sidebar from './components/Sidebar'
+import PublicShare from './pages/PublicShare'
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -20,6 +21,14 @@ const pageVariants = {
 export default function App() {
   const { isAdmin, sidebarOpen, activeRoute, setActiveRoute, logout, inactivityTimeout } = useAppStore()
   const [boothSession, setBoothSession] = useState(null)
+
+  // Check for public share URL: ?share=sessionId&user=username
+  const urlParams = new URLSearchParams(window.location.search)
+  const shareSessionId = urlParams.get('share')
+  const shareUser = urlParams.get('user')
+  if (shareSessionId && shareUser) {
+    return <PublicShare sessionId={shareSessionId} username={shareUser} />
+  }
 
   // Auto-logout due to inactivity
   useEffect(() => {

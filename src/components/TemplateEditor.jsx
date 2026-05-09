@@ -5,19 +5,33 @@ import toast from 'react-hot-toast'
 
 // Standard photobooth resolutions
 const PRESETS = {
-  portrait_strip: { label: 'Portrait Strip (600×1800)', w: 600, h: 1800, ratio: '1/3' },
-  portrait_2: { label: 'Portrait 2-foto (600×1272)', w: 600, h: 1272, ratio: '600/1272' },
-  landscape_4: { label: 'Landscape 4-foto (1800×600)', w: 1800, h: 600, ratio: '3/1' },
-  grid_4x6: { label: 'Grid 4x6 (900×600)', w: 900, h: 600, ratio: '3/2' },
-  square: { label: 'Square 1:1 (800×800)', w: 800, h: 800, ratio: '1/1' },
+  portrait_strip: { label: 'Portrait Strip (600×1800)', w: 600, h: 1800 },
+  portrait_2: { label: 'Portrait 2-foto (600×1272)', w: 600, h: 1272 },
+  landscape_4: { label: 'Landscape 4-foto (1800×600)', w: 1800, h: 600 },
+  grid_4x6: { label: 'Grid 4x6 (900×600)', w: 900, h: 600 },
+  square: { label: 'Square 1:1 (800×800)', w: 800, h: 800 },
 }
 
 const MIN_SIZE = 3
 
 export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionLayout = 'strip', onSave, onClose }) {
-  // Auto-select preset based on session layout
-  const defaultPreset = sessionLayout === '4x6' ? 'grid_4x6' : 'portrait_strip'
+  // Parse custom resolution from sessionLayout (format: "custom_1000x2000")
+  let defaultPreset = PRESETS[sessionLayout] ? sessionLayout : (sessionLayout === '4x6' ? 'grid_4x6' : 'portrait_strip')
+  let initCustomW = 800
+  let initCustomH = 800
+  
+  if (sessionLayout?.startsWith('custom_')) {
+    defaultPreset = 'custom'
+    const parts = sessionLayout.replace('custom_', '').split('x')
+    if (parts.length === 2) {
+      initCustomW = parseInt(parts[0]) || 800
+      initCustomH = parseInt(parts[1]) || 800
+    }
+  }
+
   const [preset, setPreset] = useState(defaultPreset)
+  const [customW, setCustomW] = useState(initCustomW)
+  const [customH, setCustomH] = useState(initCustomH)
   const [slots, setSlots] = useState(initialSlots.length > 0 ? initialSlots : [])
   const [selected, setSelected] = useState(null)
   const [drag, setDrag] = useState(null)
@@ -25,23 +39,22 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
 
   const getRect = () => containerRef.current?.getBoundingClientRect() || { width: 1, height: 1, left: 0, top: 0 }
 
-  const currentPreset = PRESETS[preset]
+  const currentW = preset === 'custom' ? customW : PRESETS[preset]?.w || 800
+  const currentH = preset === 'custom' ? customH : PRESETS[preset]?.h || 800
+  const currentRatio = `${currentW}/${currentH}`
+  const isLandscape = currentW > currentH
 
   const addSlot = () => {
     const idx = slots.length
-    const isLandscape = currentPreset.w > currentPreset.h
     if (isLandscape) {
-      // Horizontal slots side by side
       setSlots(prev => [...prev, { x: 2 + idx * 24, y: 10, w: 22, h: 80 }])
     } else {
-      // Vertical slots stacked
       setSlots(prev => [...prev, { x: 5, y: 5 + idx * 32, w: 90, h: 28 }])
     }
     setSelected(slots.length)
   }
 
   const addDefaultSlots = (count) => {
-    const isLandscape = currentPreset.w > currentPreset.h
     const newSlots = Array.from({ length: count }, (_, i) => {
       if (isLandscape) {
         const slotW = (96 / count) - 2
@@ -59,6 +72,12 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
   const deleteSlot = (idx) => {
     setSlots(prev => prev.filter((_, i) => i !== idx))
     setSelected(null)
+  }
+
+  const duplicateSlot = (idx) => {
+    const s = slots[idx]
+    setSlots(prev => [...prev, { x: Math.min(100 - s.w, s.x + 4), y: Math.min(100 - s.h, s.y + 4), w: s.w, h: s.h }])
+    setSelected(slots.length)
   }
 
   const moveSlotUp = (idx) => {
@@ -137,15 +156,14 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
 
   const handleSave = () => {
     if (slots.length === 0) { toast.error('Tambahkan minimal 1 slot foto'); return }
+    const layoutValue = preset === 'custom' ? `custom_${customW}x${customH}` : preset
     onSave(slots.map(s => ({
       x: parseFloat(s.x.toFixed(2)), y: parseFloat(s.y.toFixed(2)),
       w: parseFloat(s.w.toFixed(2)), h: parseFloat(s.h.toFixed(2)),
-    })))
-    toast.success('Layout template disimpan!')
+    })), layoutValue)
   }
 
   const COLORS = ['#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
-  const isLandscape = currentPreset.w > currentPreset.h
 
   return (
     <div className="flex flex-col gap-4" style={{ minHeight: 560 }}>
@@ -163,7 +181,18 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
             {Object.entries(PRESETS).map(([key, p]) => (
               <option key={key} value={key}>{p.label}</option>
             ))}
+            <option value="custom">Custom (Bebas)</option>
           </select>
+
+          {preset === 'custom' && (
+            <div className="flex items-center gap-1 ml-2">
+              <input type="number" className="input-glass text-xs rounded-lg px-2 py-1" style={{ width: 60 }} 
+                value={customW} onChange={e => setCustomW(parseInt(e.target.value) || 100)} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>×</span>
+              <input type="number" className="input-glass text-xs rounded-lg px-2 py-1" style={{ width: 60 }} 
+                value={customH} onChange={e => setCustomH(parseInt(e.target.value) || 100)} />
+            </div>
+          )}
         </div>
 
         {/* Quick add buttons */}
@@ -191,20 +220,20 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
-              CANVAS — {currentPreset.w}×{currentPreset.h}px
+              CANVAS — {currentW}×{currentH}px
             </span>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              💡 Drag slot untuk pindah · Drag sudut untuk resize
+              💡 Klik kotak untuk ubah ukuran (resize) · Drag untuk pindah
             </span>
           </div>
 
-          {/* Canvas container — matches aspect ratio of selected preset */}
+          {/* Canvas container */}
           <div className="flex-1 flex items-start justify-center overflow-auto">
             <div
               ref={containerRef}
               className="relative select-none flex-shrink-0"
               style={{
-                aspectRatio: currentPreset.ratio,
+                aspectRatio: currentRatio,
                 maxHeight: isLandscape ? 320 : 520,
                 maxWidth: isLandscape ? '100%' : 260,
                 width: isLandscape ? '100%' : 'auto',
@@ -258,11 +287,10 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
                     zIndex: isSel ? 20 : 10,
                     transition: drag ? 'none' : 'box-shadow 0.15s',
                     boxSizing: 'border-box',
-                  }}>
-                    {/* Move area */}
-                    <div style={{ position: 'absolute', inset: 8, cursor: 'grab' }}
-                      onMouseDown={e => onMouseDown(e, i, 'move')} />
-
+                    cursor: 'grab'
+                  }}
+                  onMouseDown={e => onMouseDown(e, i, 'move')}
+                  >
                     {/* Label */}
                     <div style={{
                       position: 'absolute', top: 4, left: 4,
@@ -290,16 +318,17 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
                     {isSel && ['tl', 'tr', 'bl', 'br'].map(corner => (
                       <div key={corner} style={{
                         position: 'absolute',
-                        width: 10, height: 10,
+                        width: 16, height: 16,
                         background: '#fff',
                         border: `2px solid ${color}`,
-                        borderRadius: 2,
+                        borderRadius: 4,
                         cursor: `${corner}-resize`,
-                        ...(corner === 'tl' ? { top: -5, left: -5 } :
-                            corner === 'tr' ? { top: -5, right: -5 } :
-                            corner === 'bl' ? { bottom: -5, left: -5 } :
-                                             { bottom: -5, right: -5 }),
+                        ...(corner === 'tl' ? { top: -8, left: -8 } :
+                            corner === 'tr' ? { top: -8, right: -8 } :
+                            corner === 'bl' ? { bottom: -8, left: -8 } :
+                                             { bottom: -8, right: -8 }),
                         zIndex: 30,
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
                       }} onMouseDown={e => onMouseDown(e, i, corner)} />
                     ))}
                   </div>
@@ -337,11 +366,13 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
                     </div>
                     <div className="flex gap-0.5">
                       <button onClick={e => { e.stopPropagation(); moveSlotUp(i) }}
-                        className="p-0.5 rounded hover:bg-white/10 text-white/50" title="Naik">▲</button>
+                        className="p-1 rounded hover:bg-white/10 text-white/50" title="Naik">▲</button>
                       <button onClick={e => { e.stopPropagation(); moveSlotDown(i) }}
-                        className="p-0.5 rounded hover:bg-white/10 text-white/50" title="Turun">▼</button>
+                        className="p-1 rounded hover:bg-white/10 text-white/50" title="Turun">▼</button>
+                      <button onClick={e => { e.stopPropagation(); duplicateSlot(i) }}
+                        className="p-1 rounded hover:bg-white/10 text-blue-400" title="Duplikat ukuran ini">❐</button>
                       <button onClick={e => { e.stopPropagation(); deleteSlot(i) }}
-                        className="p-0.5 rounded hover:bg-red-500/20 text-red-400">✕</button>
+                        className="p-1 rounded hover:bg-red-500/20 text-red-400" title="Hapus">✕</button>
                     </div>
                   </div>
                   <div className="text-xs leading-4" style={{ color: 'var(--text-muted)', fontSize: 10 }}>
@@ -366,3 +397,4 @@ export default function TemplateEditor({ overlayUrl, initialSlots = [], sessionL
     </div>
   )
 }
+

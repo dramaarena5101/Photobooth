@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings as SettingsIcon, Database, Bell, Shield, Globe, Save, ExternalLink } from 'lucide-react'
+import { Settings as SettingsIcon, Database, Bell, Shield, Globe, Save, ExternalLink, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAppStore } from '../store/useAppStore'
 
@@ -61,14 +61,19 @@ export default function SettingsPage() {
   const [timeoutVal, setTimeoutVal] = useState(inactivityTimeout)
   const [showSql, setShowSql] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [printerSettings, setPrinterSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('printer_settings') || '{"paperSize":"A4","orientation":"portrait","copies":1}') }
+    catch { return { paperSize: 'A4', orientation: 'portrait', copies: 1 } }
+  })
 
   const handleSave = async () => {
     setSaving(true)
     localStorage.setItem('admin_pass', adminPass)
+    localStorage.setItem('printer_settings', JSON.stringify(printerSettings))
     setInactivityTimeout(timeoutVal)
     await new Promise(r => setTimeout(r, 800))
     setSaving(false)
-    toast.success('Settings saved! Update .env file for Supabase credentials.')
+    toast.success('Settings saved!')
   }
 
   return (
@@ -141,6 +146,67 @@ export default function SettingsPage() {
           <input type="password" className="input-glass w-full px-4 py-3 rounded-xl text-sm font-mono"
             placeholder="eyJhbGci..." value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)} />
         </div>
+      </div>
+
+      {/* Printer Settings */}
+      <div className="glass p-6 space-y-4">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.1)' }}>
+            <Printer size={16} style={{ color: '#10b981' }} />
+          </div>
+          <div>
+            <h2 className="font-bold" style={{ fontFamily: 'Space Grotesk' }}>Printer Settings</h2>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Konfigurasi printer untuk cetak foto langsung dari galeri</p>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            💡 Printer yang tersedia ditentukan oleh browser dan sistem operasi. Saat cetak, dialog printer OS akan terbuka — pilih printer fisik yang terhubung di sana.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>Ukuran Kertas</label>
+            <select className="input-glass w-full px-3 py-2.5 rounded-xl text-sm"
+              value={printerSettings.paperSize}
+              onChange={e => setPrinterSettings(p => ({ ...p, paperSize: e.target.value }))}>
+              <option value="A4">A4</option>
+              <option value="A5">A5</option>
+              <option value="4x6in">4×6 inch (Photo)</option>
+              <option value="5x7in">5×7 inch</option>
+              <option value="letter">Letter (US)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>Orientasi</label>
+            <select className="input-glass w-full px-3 py-2.5 rounded-xl text-sm"
+              value={printerSettings.orientation}
+              onChange={e => setPrinterSettings(p => ({ ...p, orientation: e.target.value }))}>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>Jumlah Salinan</label>
+            <input type="number" min="1" max="20"
+              className="input-glass w-full px-3 py-2.5 rounded-xl text-sm"
+              value={printerSettings.copies}
+              onChange={e => setPrinterSettings(p => ({ ...p, copies: parseInt(e.target.value) || 1 }))} />
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            const testWin = window.open('', '_blank')
+            if (!testWin) { toast.error('Popup diblokir. Izinkan popup untuk print.'); return }
+            testWin.document.write(`<html><head><title>Test Print</title><style>@page{size:${printerSettings.paperSize} ${printerSettings.orientation};margin:1cm}body{font-family:sans-serif;text-align:center;padding:40px}</style></head><body><h2>Test Print ✓</h2><p>Ukuran: ${printerSettings.paperSize} ${printerSettings.orientation}</p><p>Photobooth App</p><script>window.print();setTimeout(()=>window.close(),500)</script></body></html>`)
+            testWin.document.close()
+          }}
+          className="btn-secondary px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+          <Printer size={14} /> Test Print
+        </button>
       </div>
 
       {/* Database Setup */}

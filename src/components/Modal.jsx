@@ -13,10 +13,19 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="modal-overlay" onClick={onClose}>
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={onClose}
+        >
           <motion.div
-            className={`glass w-full flex flex-col ${sizes[size]} max-h-[90vh] my-auto`}
-            style={{ borderRadius: 20 }}
+            className={`glass w-full flex flex-col ${sizes[size]}`}
+            style={{ borderRadius: 20, maxHeight: '90vh' }}
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 20 }}
@@ -27,20 +36,17 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
             {title && (
               <div className="flex items-center justify-between p-6 border-b shrink-0" style={{ borderColor: 'var(--border-glass)' }}>
                 <h2 className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk' }}>{title}</h2>
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-lg transition-all btn-secondary"
-                  style={{ borderRadius: 8 }}
-                >
+                <button onClick={onClose} className="p-2 rounded-lg transition-all btn-secondary">
                   <X size={16} />
                 </button>
               </div>
             )}
             {/* Body */}
-            <div className="p-6 overflow-y-auto">{children}</div>
+            <div className="p-6 overflow-y-auto flex-1">{children}</div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   )
 }
+
