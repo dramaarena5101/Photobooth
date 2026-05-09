@@ -14,6 +14,7 @@ import { generatePhotoComposite } from '../utils/canvasEngine'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
+import * as faceapi from '@vladmandic/face-api'
 
 const STEPS = {
   ATTRACT: 'attract', ENTER_NAME: 'enter_name', CHOOSE_TEMPLATE: 'choose_template',
@@ -26,6 +27,20 @@ const FILTERS = [
   { id: 'bw', name: 'B & W', css: 'grayscale(100%) contrast(1.1)' },
   { id: 'sepia', name: 'Retro', css: 'sepia(80%) contrast(1.1)' },
   { id: 'vintage', name: 'Vintage', css: 'sepia(30%) contrast(1.2) saturate(1.2)' },
+  { id: 'cool', name: 'Cool', css: 'hue-rotate(180deg) saturate(1.2) contrast(1.1)' },
+  { id: 'warm', name: 'Warm', css: 'sepia(30%) hue-rotate(-30deg) saturate(1.4)' },
+  { id: 'cyberpunk', name: 'Cyber', css: 'hue-rotate(90deg) saturate(2) contrast(1.3)' },
+  { id: 'dreamy', name: 'Dreamy', css: 'blur(1px) brightness(1.1) saturate(1.2)' },
+]
+
+const PROPS = [
+  { id: 'none', icon: '🚫' },
+  { id: 'grad', icon: '🎓', size: '180px', top: '5%' },
+  { id: 'glasses', icon: '😎', size: '140px', top: '25%' },
+  { id: 'crown', icon: '👑', size: '160px', top: '5%' },
+  { id: 'bunny', icon: '🐰', size: '160px', top: '8%' },
+  { id: 'love', icon: '🥰', size: '140px', top: '30%' },
+  { id: 'mask', icon: '🎭', size: '140px', top: '30%' },
 ]
 
 export default function Booth({ session: initialSession, kioskSessions, onBack }) {
@@ -52,9 +67,14 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
   const [devices, setDevices] = useState([])
   const [selectedDeviceId, setSelectedDeviceId] = useState(null)
   const [activeFilter, setActiveFilter] = useState(FILTERS[0].css)
+  const [activeProp, setActiveProp] = useState(PROPS[0])
+  const [customProps, setCustomProps] = useState([])
+  const [modelsLoaded, setModelsLoaded] = useState(false)
+  const [detections, setDetections] = useState(null)
   const webcamRef = useRef(null)
   const containerRef = useRef(null)
   const captureRef = useRef(false)
+  const detectionIntervalRef = useRef(null)
 
   const isStrip = activeSession?.layout === 'strip'
   const videoConstraints = {
@@ -114,6 +134,121 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
     navigator.mediaDevices.enumerateDevices().then(handleDevices)
   }, [handleDevices])
 
+  // Load face-api models
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const MODEL_URL = '/models'
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
+        ])
+        setModelsLoaded(true)
+        console.log('Face-api models loaded')
+      } catch (err) {
+        console.error('Error loading face-api models:', err)
+      }
+    }
+    loadModels()
+  }, [])
+
+  // Detection loop
+  useEffect(() => {
+    if (!modelsLoaded || step !== STEPS.PREVIEW) {
+      if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current)
+      setDetections(null)
+      return
+    }
+
+    detectionIntervalRef.current = setInterval(async () => {
+      if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState === 4) {
+        const video = webcamRef.current.video
+        const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+        
+        if (result) {
+          // Normalize detections based on video dimensions
+          const dims = faceapi.matchDimensions(video, video, true)
+          const resizedResult = faceapi.resizeResults(result, dims)
+          setDetections(resizedResult)
+        } else {
+          setDetections(null)
+        }
+      }
+    }, 100)
+
+    return () => {
+      if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current)
+    }
+  }, [modelsLoaded, step])
+
+  const getPropStyles = () => {
+    if (!activeProp || activeProp.id === 'none') return null
+    if (!webcamRef.current || !webcamRef.current.video) return null
+    
+    const video = webcamRef.current.video
+    if (detections) {
+      const box = detections.detection.box
+      const width = box.width * 1.5
+      const left = box.x + box.width / 2 - width / 2
+      
+      let topPos
+      if (activeProp.id === 'glasses' || activeProp.id === 'mask') {
+        topPos = box.y + box.height * 0.45 - width / 2
+      } else {
+        topPos = box.y + box.height * 0.1 - width / 2
+      }
+      
+      return {
+        left: `${(left / video.videoWidth) * 100}%`,
+        top: `${(topPos / video.videoHeight) * 100}%`,
+        width: `${(width / video.videoWidth) * 100}%`,
+        height: `${(width / video.videoWidth) * 100}%`,
+        fontSize: `${(width / video.videoWidth) * 100}vw`,
+        position: 'absolute',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        pointerEvents: 'none',
+        zIndex: 10
+      }
+    } else {
+      return {
+        top: activeProp.top,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        fontSize: `clamp(60px, 15vw, ${activeProp.size})`,
+        width: activeProp.size,
+        height: activeProp.size,
+        lineHeight: 1,
+        position: 'absolute',
+        display: 'flex',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        zIndex: 10
+      }
+    }
+  }
+
+  const handleCustomPropUpload = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const newProp = {
+          id: `custom_${Date.now()}`,
+          icon: event.target.result,
+          isImage: true,
+          size: '150px',
+          top: '10%'
+        }
+        setCustomProps(prev => [...prev, newProp])
+        setActiveProp(newProp)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const startCapture = async () => {
     if (captureRef.current) return
     captureRef.current = true
@@ -128,9 +263,10 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
       setCountdown(null); setStep(STEPS.CAPTURING)
       setFlashActive(true); playShutterSound(); await sleep(80)
       const rawImg = webcamRef.current?.getScreenshot()
+      const currentDetections = detections
       setFlashActive(false)
       if (rawImg) {
-        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter)
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter, currentDetections)
         setCapturedPhotos(prev => {
           const next = [...prev]
           next[retakeSlot] = croppedImg
@@ -152,9 +288,10 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
       setCountdown(null); setStep(STEPS.CAPTURING)
       setFlashActive(true); playShutterSound(); await sleep(80)
       const rawImg = webcamRef.current?.getScreenshot()
+      const currentDetections = detections
       setFlashActive(false)
       if (rawImg) {
-        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter)
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter, currentDetections)
         photos.push(croppedImg)
         setCapturedPhotos([...photos])
       }
@@ -184,7 +321,7 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
     toast(`Retake foto #${idx + 1} — tekan Start Capture`, { icon: '📸' })
   }
 
-  const cropToPreview = (dataUrl, targetRatio, filterCss = 'none') => {
+  const cropToPreview = (dataUrl, targetRatio, filterCss = 'none', detectionData = null) => {
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
@@ -219,6 +356,64 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
           }
           ctx.drawImage(img, offsetX, offsetY, targetW, targetH, 0, 0, canvas.width, canvas.height)
           ctx.filter = 'none'
+
+          if (activeProp && activeProp.id !== 'none') {
+            const drawProp = (propImg = null) => {
+              let drawX, drawY, drawW, drawH
+              
+              if (detectionData) {
+                // AR Positioning based on face detection
+                const box = detectionData.detection.box
+                const scaleX = canvas.width / sourceW
+                const scaleY = canvas.height / sourceH
+                
+                // Adjust box based on crop offset
+                const boxX = (box.x - offsetX) * scaleX
+                const boxY = (box.y - offsetY) * scaleY
+                const boxW = box.width * scaleX
+                const boxH = box.height * scaleY
+                
+                drawW = boxW * 1.5
+                drawH = drawW
+                drawX = boxX + boxW / 2
+                
+                if (activeProp.id === 'glasses' || activeProp.id === 'mask') {
+                  drawY = boxY + boxH * 0.45
+                } else {
+                  // Hats/crowns/ears at top
+                  drawY = boxY + boxH * 0.1
+                }
+              } else {
+                // Static Positioning
+                const scale = canvas.width / 900
+                drawW = parseInt(activeProp.size) * scale
+                drawH = drawW
+                drawX = canvas.width / 2
+                drawY = canvas.height * (parseFloat(activeProp.top) / 100) + drawW / 2
+              }
+
+              if (propImg) {
+                ctx.drawImage(propImg, drawX - drawW / 2, drawY - drawH / 2, drawW, drawH)
+              } else {
+                ctx.font = `${drawW * 0.8}px Arial`
+                ctx.textAlign = 'center'
+                ctx.textBaseline = 'middle'
+                ctx.fillText(activeProp.icon, drawX, drawY)
+              }
+            }
+
+            if (activeProp.isImage) {
+              const propImg = new Image()
+              propImg.onload = () => {
+                drawProp(propImg)
+                resolve(canvas.toDataURL('image/jpeg', 0.95))
+              }
+              propImg.src = activeProp.icon
+              return // resolve happens in onload
+            } else {
+              drawProp()
+            }
+          }
           
           resolve(canvas.toDataURL('image/jpeg', 0.95))
         } catch (err) { reject(err) }
@@ -507,6 +702,16 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, filter: activeFilter }}
               />
 
+              {activeProp && activeProp.id !== 'none' && (
+                <div style={getPropStyles()}>
+                  {activeProp.isImage ? (
+                    <img src={activeProp.icon} className="w-full h-full object-contain" />
+                  ) : (
+                    activeProp.icon
+                  )}
+                </div>
+              )}
+
               {/* Shot progress bar at top */}
               <div className="absolute top-0 left-0 right-0 z-20 flex"
                 style={{ height: 4, background: 'rgba(0,0,0,0.3)' }}>
@@ -697,6 +902,23 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
                     </button>
                   ))}
                 </div>
+                <div className="flex gap-2 overflow-x-auto mb-3 pb-1 no-scrollbar items-center">
+                  {PROPS.concat(customProps).map(p => (
+                    <button key={p.id} 
+                      onClick={() => setActiveProp(p)}
+                      className={`px-3 py-1.5 rounded-xl text-xl whitespace-nowrap transition-all border flex-shrink-0 ${activeProp.id === p.id ? 'bg-purple-500 border-purple-400' : 'bg-black/20 border-white/10 hover:bg-white/10'}`}>
+                      {p.isImage ? <img src={p.icon} className="w-8 h-8 object-contain" /> : p.icon}
+                    </button>
+                  ))}
+                  <div className="relative flex-shrink-0">
+                    <input type="file" accept="image/png" className="hidden" id="prop-upload" onChange={handleCustomPropUpload} />
+                    <button onClick={() => document.getElementById('prop-upload').click()}
+                      className="w-10 h-10 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center hover:border-purple-500 hover:bg-purple-500/10 transition-all">
+                      <Upload size={16} className="text-white/50" />
+                    </button>
+                  </div>
+                </div>
+                
                 {devices.length > 1 && (
                   <select
                     className="input-glass w-full py-2.5 px-3 rounded-xl text-xs mb-2"
