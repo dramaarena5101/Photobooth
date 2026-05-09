@@ -14,17 +14,16 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
     <AnimatePresence>
       {isOpen && (
         <div
+          className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 md:p-10"
           style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
+            zIndex: 9999,
             background: 'rgba(0,0,0,0.7)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '16px'
+            backdropFilter: 'blur(6px)'
           }}
           onClick={onClose}
         >
           <motion.div
-            className={`glass w-full flex flex-col ${sizes[size]}`}
+            className={`glass w-full flex flex-col relative ${sizes[size]}`}
             style={{ borderRadius: 20, maxHeight: '90vh' }}
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -34,7 +33,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
           >
             {/* Header */}
             {title && (
-              <div className="flex items-center justify-between p-6 border-b shrink-0" style={{ borderColor: 'var(--border-glass)' }}>
+              <div className="flex items-center justify-between p-5 md:p-6 border-b shrink-0" style={{ borderColor: 'var(--border-glass)' }}>
                 <h2 className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk' }}>{title}</h2>
                 <button onClick={onClose} className="p-2 rounded-lg transition-all btn-secondary">
                   <X size={16} />
@@ -42,7 +41,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
               </div>
             )}
             {/* Body */}
-            <div className="p-6 overflow-y-auto flex-1">{children}</div>
+            <div className="p-5 md:p-6 overflow-y-auto flex-1 min-h-0">{children}</div>
           </motion.div>
         </div>
       )}

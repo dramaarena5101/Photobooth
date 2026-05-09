@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '../store/useAppStore'
 import { QRCodeSVG } from 'qrcode.react'
 import Modal from '../components/Modal'
-import { Search, Download, Printer, Share2, Eye, Images, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Search, Download, Printer, Share2, Eye, Images, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 
@@ -35,6 +35,8 @@ export default function Gallery() {
   const [filterType, setFilterType] = useState('all')
   const [selectedPhoto, setSelectedPhoto] = useState(null)
   const [showQR, setShowQR] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [viewMode, setViewMode] = useState('print') // 'print' | 'raw'
   const [rawIndex, setRawIndex] = useState(0)
   const [printerSettings, setPrinterSettings] = useState(() => {
@@ -56,6 +58,7 @@ export default function Gallery() {
     setViewMode('print')
     setRawIndex(0)
     setShowQR(false)
+    setShowDeleteConfirm(false)
   }
 
   const rawPhotos = selectedPhoto?.raw_urls || []
@@ -72,6 +75,21 @@ export default function Gallery() {
 
   const handlePrint = (url) => {
     printImage(url, printerSettings)
+  }
+
+  const handleDelete = async () => {
+    if (!selectedPhoto) return
+    setIsDeleting(true)
+    const { deletePhoto } = useAppStore.getState()
+    const { error } = await deletePhoto(selectedPhoto)
+    setIsDeleting(false)
+    if (error) {
+      toast.error('Gagal menghapus foto')
+    } else {
+      toast.success('Foto dan file berhasil dihapus!')
+      setSelectedPhoto(null)
+      setShowDeleteConfirm(false)
+    }
   }
 
   return (
@@ -185,123 +203,152 @@ export default function Gallery() {
               </button>
             </div>
 
-            {/* Image display */}
-            {viewMode === 'print' ? (
-              <div className="flex justify-center rounded-xl overflow-hidden" style={{ background: '#000', minHeight: 200, maxHeight: 460 }}>
-                {printUrl ? (
-                  <img src={printUrl} alt="print" className="object-contain max-h-[460px] w-auto" />
-                ) : (
-                  <div className="flex items-center justify-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Tidak ada foto hasil print
-                  </div>
-                )}
+            {/* Delete Modal Confirmation layered over detail */}
+            {showDeleteConfirm ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center bg-gray-900 rounded-xl space-y-4" style={{ minHeight: 200 }}>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500/20">
+                  <Trash2 size={28} className="text-red-500" />
+                </div>
+                <h3 className="font-bold text-lg">Hapus Permanen?</h3>
+                <p className="text-sm text-gray-400">
+                  Aksi ini akan menghapus data foto dan file gambar dari database dan storage secara permanen. Tidak bisa dikembalikan.
+                </p>
+                <div className="flex gap-3 w-full mt-4">
+                  <button onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1 btn-secondary py-3 rounded-xl text-sm" disabled={isDeleting}>Batal</button>
+                  <button onClick={handleDelete}
+                    className="flex-1 btn-danger py-3 rounded-xl text-sm flex items-center justify-center gap-2" disabled={isDeleting}>
+                    {isDeleting ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Trash2 size={14} />}
+                    Ya, Hapus
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="relative flex justify-center rounded-xl overflow-hidden" style={{ background: '#000', minHeight: 200, maxHeight: 400 }}>
-                  {currentRawUrl ? (
-                    <img src={currentRawUrl} alt={`raw ${rawIndex + 1}`} className="object-contain max-h-[400px] w-auto" />
-                  ) : (
-                    <div className="flex items-center justify-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Tidak ada foto mentahan
+              <>
+                {/* Image display */}
+                {viewMode === 'print' ? (
+                  <div className="flex justify-center rounded-xl overflow-hidden" style={{ background: '#000', minHeight: 200, maxHeight: 460 }}>
+                    {printUrl ? (
+                      <img src={printUrl} alt="print" className="object-contain max-h-[460px] w-auto" />
+                    ) : (
+                      <div className="flex items-center justify-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+                        Tidak ada foto hasil print
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="relative flex justify-center rounded-xl overflow-hidden" style={{ background: '#000', minHeight: 200, maxHeight: 400 }}>
+                      {currentRawUrl ? (
+                        <img src={currentRawUrl} alt={`raw ${rawIndex + 1}`} className="object-contain max-h-[400px] w-auto" />
+                      ) : (
+                        <div className="flex items-center justify-center py-16 text-sm" style={{ color: 'var(--text-muted)' }}>
+                          Tidak ada foto mentahan
+                        </div>
+                      )}
+                      {/* Prev / Next raw */}
+                      {rawPhotos.length > 1 && (
+                        <>
+                          <button onClick={() => setRawIndex(i => Math.max(0, i - 1))}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
+                            style={{ background: 'rgba(0,0,0,0.6)' }} disabled={rawIndex === 0}>
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button onClick={() => setRawIndex(i => Math.min(rawPhotos.length - 1, i + 1))}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
+                            style={{ background: 'rgba(0,0,0,0.6)' }} disabled={rawIndex === rawPhotos.length - 1}>
+                            <ChevronRight size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                  {/* Prev / Next raw */}
-                  {rawPhotos.length > 1 && (
-                    <>
-                      <button onClick={() => setRawIndex(i => Math.max(0, i - 1))}
-                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
-                        style={{ background: 'rgba(0,0,0,0.6)' }} disabled={rawIndex === 0}>
-                        <ChevronLeft size={16} />
-                      </button>
-                      <button onClick={() => setRawIndex(i => Math.min(rawPhotos.length - 1, i + 1))}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
-                        style={{ background: 'rgba(0,0,0,0.6)' }} disabled={rawIndex === rawPhotos.length - 1}>
-                        <ChevronRight size={16} />
-                      </button>
-                    </>
-                  )}
-                </div>
-                {/* Raw thumbnail strip */}
-                {rawPhotos.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {rawPhotos.map((url, i) => (
-                      <button key={i} onClick={() => setRawIndex(i)}
-                        className="flex-shrink-0 rounded-lg overflow-hidden"
-                        style={{ width: 64, height: 48, border: `2px solid ${i === rawIndex ? '#a855f7' : 'transparent'}` }}>
-                        <img src={url} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
+                    {/* Raw thumbnail strip */}
+                    {rawPhotos.length > 1 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {rawPhotos.map((url, i) => (
+                          <button key={i} onClick={() => setRawIndex(i)}
+                            className="flex-shrink-0 rounded-lg overflow-hidden"
+                            style={{ width: 64, height: 48, border: `2px solid ${i === rawIndex ? '#a855f7' : 'transparent'}` }}>
+                            <img src={url} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+
+                {/* Info */}
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Nama</p>
+                    <p className="font-semibold text-sm truncate">{selectedPhoto.username || 'N/A'}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Tanggal</p>
+                    <p className="font-semibold text-xs">
+                      {selectedPhoto.created_at ? format(new Date(selectedPhoto.created_at), 'dd MMM yyyy') : 'N/A'}
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Sesi</p>
+                    <p className="font-semibold text-xs truncate">
+                      {sessions.find(s => s.id === selectedPhoto.session_id)?.name || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="grid grid-cols-2 gap-3">
+                  {viewMode === 'print' && printUrl && (
+                    <>
+                      <motion.button onClick={() => handlePrint(printUrl)}
+                        className="btn-primary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                        whileHover={{ scale: 1.02 }}>
+                        <Printer size={14} /> Print Hasil
+                      </motion.button>
+                      <motion.button onClick={() => handleDownload(printUrl, '_print')}
+                        className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                        whileHover={{ scale: 1.02 }}>
+                        <Download size={14} /> Download
+                      </motion.button>
+                    </>
+                  )}
+                  {viewMode === 'raw' && currentRawUrl && (
+                    <>
+                      <motion.button onClick={() => handlePrint(currentRawUrl)}
+                        className="btn-primary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                        whileHover={{ scale: 1.02 }}>
+                        <Printer size={14} /> Print Mentahan
+                      </motion.button>
+                      <motion.button onClick={() => handleDownload(currentRawUrl, `_raw${rawIndex + 1}`)}
+                        className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                        whileHover={{ scale: 1.02 }}>
+                        <Download size={14} /> Download
+                      </motion.button>
+                    </>
+                  )}
+                  <motion.button onClick={() => setShowQR(true)}
+                    className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                    whileHover={{ scale: 1.02 }}>
+                    <Share2 size={14} /> Share QR
+                  </motion.button>
+                  {printUrl && rawPhotos.length > 0 && (
+                    <motion.button
+                      onClick={() => { handlePrint(printUrl); rawPhotos.forEach(u => handlePrint(u)) }}
+                      className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                      style={{ fontSize: 12 }}
+                      whileHover={{ scale: 1.02 }}>
+                      <Printer size={14} /> Print Semua
+                    </motion.button>
+                  )}
+                  <motion.button onClick={() => setShowDeleteConfirm(true)}
+                    className="btn-danger py-3 rounded-xl text-sm flex items-center justify-center gap-2 col-span-2 mt-2"
+                    whileHover={{ scale: 1.02 }}>
+                    <Trash2 size={14} /> Hapus Foto & Mentahan
+                  </motion.button>
+                </div>
+              </>
             )}
-
-            {/* Info */}
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Nama</p>
-                <p className="font-semibold text-sm truncate">{selectedPhoto.username || 'N/A'}</p>
-              </div>
-              <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Tanggal</p>
-                <p className="font-semibold text-xs">
-                  {selectedPhoto.created_at ? format(new Date(selectedPhoto.created_at), 'dd MMM yyyy') : 'N/A'}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Sesi</p>
-                <p className="font-semibold text-xs truncate">
-                  {sessions.find(s => s.id === selectedPhoto.session_id)?.name || 'N/A'}
-                </p>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="grid grid-cols-2 gap-3">
-              {viewMode === 'print' && printUrl && (
-                <>
-                  <motion.button onClick={() => handlePrint(printUrl)}
-                    className="btn-primary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                    whileHover={{ scale: 1.02 }}>
-                    <Printer size={14} /> Print Hasil
-                  </motion.button>
-                  <motion.button onClick={() => handleDownload(printUrl, '_print')}
-                    className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                    whileHover={{ scale: 1.02 }}>
-                    <Download size={14} /> Download
-                  </motion.button>
-                </>
-              )}
-              {viewMode === 'raw' && currentRawUrl && (
-                <>
-                  <motion.button onClick={() => handlePrint(currentRawUrl)}
-                    className="btn-primary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                    whileHover={{ scale: 1.02 }}>
-                    <Printer size={14} /> Print Mentahan
-                  </motion.button>
-                  <motion.button onClick={() => handleDownload(currentRawUrl, `_raw${rawIndex + 1}`)}
-                    className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                    whileHover={{ scale: 1.02 }}>
-                    <Download size={14} /> Download
-                  </motion.button>
-                </>
-              )}
-              <motion.button onClick={() => setShowQR(true)}
-                className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                whileHover={{ scale: 1.02 }}>
-                <Share2 size={14} /> Share QR
-              </motion.button>
-              {printUrl && rawPhotos.length > 0 && (
-                <motion.button
-                  onClick={() => { handlePrint(printUrl); rawPhotos.forEach(u => handlePrint(u)) }}
-                  className="btn-secondary py-3 rounded-xl text-sm flex items-center justify-center gap-2"
-                  style={{ fontSize: 12 }}
-                  whileHover={{ scale: 1.02 }}>
-                  <Printer size={14} /> Print Semua
-                </motion.button>
-              )}
-            </div>
           </div>
         )}
       </Modal>

@@ -104,6 +104,31 @@ export const useAppStore = create((set, get) => ({
     return { data: null, error }
   },
 
+  deletePhoto: async (photo) => {
+    // Extract file paths from URLs
+    const paths = []
+    if (photo.url) {
+      const path = photo.url.split('/photobooth/')[1]
+      if (path) paths.push(path)
+    }
+    if (photo.raw_urls) {
+      photo.raw_urls.forEach(url => {
+        const path = url.split('/photobooth/')[1]
+        if (path) paths.push(path)
+      })
+    }
+    // Delete files from storage
+    if (paths.length > 0) {
+      await supabase.storage.from('photobooth').remove(paths)
+    }
+    // Delete DB record
+    const { error } = await supabase.from('photos').delete().eq('id', photo.id)
+    if (!error) {
+      set((state) => ({ photos: state.photos.filter(p => p.id !== photo.id) }))
+    }
+    return { error }
+  },
+
   // Stats
   stats: { totalSessions: 0, totalPhotos: 0, totalPrints: 0 },
   fetchStats: async () => {

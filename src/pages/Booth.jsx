@@ -17,7 +17,7 @@ import { format } from 'date-fns'
 
 const STEPS = {
   ENTER_NAME: 'enter_name', PREVIEW: 'preview', COUNTDOWN: 'countdown',
-  CAPTURING: 'capturing', PROCESSING: 'processing', RESULT: 'result'
+  CAPTURING: 'capturing', REVIEW: 'review', PROCESSING: 'processing', RESULT: 'result'
 }
 
 export default function Booth({ session, onBack }) {
@@ -40,6 +40,8 @@ export default function Booth({ session, onBack }) {
   const [cameraFacing, setCameraFacing] = useState('user')
   const [templateLoaded, setTemplateLoaded] = useState(false)
   const [retakeSlot, setRetakeSlot] = useState(null) // null means normal, number means retaking that slot
+  const [devices, setDevices] = useState([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null)
   const webcamRef = useRef(null)
   const containerRef = useRef(null)
   const captureRef = useRef(false)
@@ -48,7 +50,7 @@ export default function Booth({ session, onBack }) {
   const videoConstraints = {
     width: isStrip ? { ideal: 720 } : { ideal: 1280 },
     height: isStrip ? { ideal: 1280 } : { ideal: 720 },
-    facingMode: cameraFacing
+    ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: cameraFacing })
   }
 
   const toggleFullscreen = () => {
@@ -61,6 +63,21 @@ export default function Booth({ session, onBack }) {
     document.addEventListener('fullscreenchange', h)
     return () => document.removeEventListener('fullscreenchange', h)
   }, [])
+
+  const handleDevices = useCallback(
+    (mediaDevices) => {
+      const videoDevices = mediaDevices.filter(({ kind }) => kind === 'videoinput')
+      setDevices(videoDevices)
+      if (videoDevices.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(videoDevices[0].deviceId)
+      }
+    },
+    [selectedDeviceId]
+  )
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(handleDevices)
+  }, [handleDevices])
 
   const startCapture = async () => {
     if (captureRef.current) return
@@ -86,7 +103,7 @@ export default function Booth({ session, onBack }) {
         })
       }
       setRetakeSlot(null); captureRef.current = false
-      setStep(STEPS.PREVIEW); return
+      setStep(STEPS.REVIEW); return
     }
 
     // Normal: capture all shots
@@ -108,17 +125,21 @@ export default function Booth({ session, onBack }) {
       }
       if (shot < totalShots - 1) await sleep(800)
     }
-    setStep(STEPS.PROCESSING)
+    setStep(STEPS.REVIEW)
     captureRef.current = false
+  }
+
+  const processComposite = async () => {
+    setStep(STEPS.PROCESSING)
     try {
-      const composite = await generatePhotoComposite(photos, session, username)
+      const composite = await generatePhotoComposite(capturedPhotos, session, username)
       setCompositeUrl(composite)
-      await handleUpload(photos, composite)
+      await handleUpload(capturedPhotos, composite)
       setStep(STEPS.RESULT)
     } catch (e) {
       console.error('CAPTURE ERROR:', e)
       toast.error('Processing failed: ' + e.message)
-      setStep(STEPS.PREVIEW)
+      setStep(STEPS.REVIEW)
     }
   }
 
@@ -465,7 +486,7 @@ export default function Booth({ session, onBack }) {
                               : <Camera size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
                           </div>
                         )}
-                        {captured && step === STEPS.PREVIEW && (
+                        {captured && step === STEPS.REVIEW && (
                           <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                             <button onClick={() => handleRetake(i)}
                               className="px-2 py-1 rounded text-xs font-bold flex items-center gap-1"
@@ -495,12 +516,12 @@ export default function Booth({ session, onBack }) {
                         initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
                         <img src={photo} alt={`Shot ${i + 1}`} className="w-full h-full object-cover" />
                         <div className="absolute top-2 left-2 badge badge-purple" style={{ fontSize: 10 }}>#{i + 1}</div>
-                        {step === STEPS.PREVIEW && (
+                        {step === STEPS.REVIEW && (
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <button onClick={() => handleRetake(i)}
                               className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"
                               style={{ background: '#a855f7', color: '#fff' }}>
-                              <RotateCcw size={11} /> Retake
+                              <RotateCcw size={12} /> Retake
                             </button>
                           </div>
                         )}
@@ -559,14 +580,34 @@ export default function Booth({ session, onBack }) {
               </>
             ) : step === STEPS.PREVIEW ? (
               <>
+                {devices.length > 1 && (
+                  <select
+                    className="input-glass w-full py-2.5 px-3 rounded-xl text-xs mb-1"
+                    value={selectedDeviceId || ''}
+                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                  >
+                    {devices.map((device, key) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Kamera ${key + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <motion.button className="btn-primary w-full py-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2"
                   onClick={startCapture} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <Zap size={16} /> Start Capture
                 </motion.button>
-                <button className="btn-secondary w-full py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-                  onClick={() => setCameraFacing(f => f === 'user' ? 'environment' : 'user')}>
-                  <RotateCcw size={13} /> Flip Camera
-                </button>
+              </>
+            ) : step === STEPS.REVIEW ? (
+              <>
+                <motion.button className="btn-primary w-full py-4 rounded-xl font-semibold text-sm flex flex-col items-center justify-center gap-1"
+                  onClick={processComposite} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                  <span className="flex items-center gap-2"><CheckCircle size={16} /> Lanjut Cetak</span>
+                  <span className="text-xs font-normal opacity-80" style={{ fontSize: 10 }}>Gabung foto</span>
+                </motion.button>
+                <p className="text-xs text-center text-gray-400 mt-2 leading-tight">
+                  💡 Arahkan kursor ke foto di preview untuk Retake
+                </p>
               </>
             ) : (
               <div className="flex items-center justify-center py-4 gap-3">
