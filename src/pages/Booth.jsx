@@ -16,13 +16,22 @@ import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
 const STEPS = {
-  ENTER_NAME: 'enter_name', PREVIEW: 'preview', COUNTDOWN: 'countdown',
-  CAPTURING: 'capturing', REVIEW: 'review', PROCESSING: 'processing', RESULT: 'result'
+  ATTRACT: 'attract', ENTER_NAME: 'enter_name', CHOOSE_TEMPLATE: 'choose_template',
+  PREVIEW: 'preview', COUNTDOWN: 'countdown', CAPTURING: 'capturing',
+  REVIEW: 'review', PROCESSING: 'processing', RESULT: 'result'
 }
 
-export default function Booth({ session, onBack }) {
+const FILTERS = [
+  { id: 'normal', name: 'Normal', css: 'none' },
+  { id: 'bw', name: 'B & W', css: 'grayscale(100%) contrast(1.1)' },
+  { id: 'sepia', name: 'Retro', css: 'sepia(80%) contrast(1.1)' },
+  { id: 'vintage', name: 'Vintage', css: 'sepia(30%) contrast(1.2) saturate(1.2)' },
+]
+
+export default function Booth({ session: initialSession, kioskSessions, onBack }) {
   const { savePhoto, addToQueue } = useAppStore()
-  const [step, setStep] = useState(STEPS.ENTER_NAME)
+  const [activeSession, setActiveSession] = useState(initialSession || (kioskSessions?.length === 1 ? kioskSessions[0] : null))
+  const [step, setStep] = useState(STEPS.ATTRACT)
   const [username, setUsername] = useState('')
   const [countdown, setCountdown] = useState(null)
   const [capturedPhotos, setCapturedPhotos] = useState([])
@@ -42,16 +51,42 @@ export default function Booth({ session, onBack }) {
   const [retakeSlot, setRetakeSlot] = useState(null) // null means normal, number means retaking that slot
   const [devices, setDevices] = useState([])
   const [selectedDeviceId, setSelectedDeviceId] = useState(null)
+  const [activeFilter, setActiveFilter] = useState(FILTERS[0].css)
   const webcamRef = useRef(null)
   const containerRef = useRef(null)
   const captureRef = useRef(false)
 
-  const isStrip = session?.layout === 'strip'
+  const isStrip = activeSession?.layout === 'strip'
   const videoConstraints = {
     width: isStrip ? { ideal: 720 } : { ideal: 1280 },
     height: isStrip ? { ideal: 1280 } : { ideal: 720 },
     ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: cameraFacing })
   }
+
+  const resetToAttract = useCallback(() => {
+    setStep(STEPS.ATTRACT)
+    setUsername('')
+    setCapturedPhotos([])
+    setCompositeUrl(null)
+    setActiveSession(initialSession || (kioskSessions?.length === 1 ? kioskSessions[0] : null))
+  }, [initialSession, kioskSessions])
+
+  useEffect(() => {
+    let timeout
+    const resetTimer = () => {
+      clearTimeout(timeout)
+      if (![STEPS.COUNTDOWN, STEPS.CAPTURING, STEPS.PROCESSING, STEPS.RESULT].includes(step)) {
+        timeout = setTimeout(resetToAttract, 60000)
+      }
+    }
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart']
+    events.forEach(e => document.addEventListener(e, resetTimer))
+    resetTimer()
+    return () => {
+      clearTimeout(timeout)
+      events.forEach(e => document.removeEventListener(e, resetTimer))
+    }
+  }, [step, resetToAttract])
 
   const toggleFullscreen = () => {
     if (!fullscreen) { containerRef.current?.requestFullscreen?.(); setFullscreen(true) }
@@ -95,7 +130,7 @@ export default function Booth({ session, onBack }) {
       const rawImg = webcamRef.current?.getScreenshot()
       setFlashActive(false)
       if (rawImg) {
-        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5)
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter)
         setCapturedPhotos(prev => {
           const next = [...prev]
           next[retakeSlot] = croppedImg
@@ -119,7 +154,7 @@ export default function Booth({ session, onBack }) {
       const rawImg = webcamRef.current?.getScreenshot()
       setFlashActive(false)
       if (rawImg) {
-        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5)
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5, activeFilter)
         photos.push(croppedImg)
         setCapturedPhotos([...photos])
       }
@@ -132,7 +167,7 @@ export default function Booth({ session, onBack }) {
   const processComposite = async () => {
     setStep(STEPS.PROCESSING)
     try {
-      const composite = await generatePhotoComposite(capturedPhotos, session, username)
+      const composite = await generatePhotoComposite(capturedPhotos, activeSession, username)
       setCompositeUrl(composite)
       await handleUpload(capturedPhotos, composite)
       setStep(STEPS.RESULT)
@@ -149,7 +184,7 @@ export default function Booth({ session, onBack }) {
     toast(`Retake foto #${idx + 1} — tekan Start Capture`, { icon: '📸' })
   }
 
-  const cropToPreview = (dataUrl, targetRatio) => {
+  const cropToPreview = (dataUrl, targetRatio, filterCss = 'none') => {
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => {
@@ -179,7 +214,12 @@ export default function Booth({ session, onBack }) {
           canvas.width = targetW_internal
           canvas.height = canvas.width / targetRatio
           
+          if (filterCss && filterCss !== 'none') {
+            ctx.filter = filterCss
+          }
           ctx.drawImage(img, offsetX, offsetY, targetW, targetH, 0, 0, canvas.width, canvas.height)
+          ctx.filter = 'none'
+          
           resolve(canvas.toDataURL('image/jpeg', 0.95))
         } catch (err) { reject(err) }
       }
@@ -191,31 +231,51 @@ export default function Booth({ session, onBack }) {
   const handleUpload = async (rawPhotos, composite) => {
     setUploadStatus('uploading')
     setUploadProgress(0)
-    const cs = (session?.name || 'session').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
+    const cs = (activeSession?.name || 'session').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     const cu = (username || 'guest').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
     const ts = format(new Date(), 'yyyyMMdd_HHmmss')
     const base = `${cs}_${cu}_${ts}`
+    const rawUrls = []
     try {
       for (let i = 0; i < rawPhotos.length; i++) {
         const blob = dataURLtoBlob(rawPhotos[i])
         const file = blobToFile(blob, `${base}_raw${i + 1}.jpg`)
-        await uploadToStorage('photobooth', `${cs}/RAW/${base}_raw${i + 1}.jpg`, file)
+        const path = `raw/${activeSession?.id}/${file.name}`
+        await uploadToStorage('photobooth', path, file)
+        const rawUrl = getPublicUrl('photobooth', path)
+        rawUrls.push(rawUrl)
         setUploadProgress(Math.round(((i + 1) / (rawPhotos.length + 1)) * 80))
+        savePhoto({
+          session_id: activeSession?.id,
+          username,
+          type: 'raw',
+          url: rawUrl,
+          raw_urls: [rawUrl],
+          created_at: new Date().toISOString()
+        })
       }
-      const compBlob = dataURLtoBlob(composite)
-      const compFile = blobToFile(compBlob, `${base}_print.jpg`)
-      const printPath = `${cs}/PRINT/${base}_print.jpg`
-      await uploadToStorage('photobooth', printPath, compFile)
-      setUploadProgress(90)
+
+      setUploadProgress(80)
+
+      // 2. Upload Print
+      const printBlob = dataURLtoBlob(composite)
+      const printFile = blobToFile(printBlob, `${base}_print.jpg`)
+      const printPath = `prints/${activeSession?.id}/${printFile.name}`
+      await uploadToStorage('photobooth', printPath, printFile)
       const printUrl = getPublicUrl('photobooth', printPath)
-      setDriveUrl(printUrl)
-      await savePhoto({
-        session_id: session?.id, username,
-        raw_urls: rawPhotos.map((_, i) => getPublicUrl('photobooth', `${cs}/RAW/${base}_raw${i + 1}.jpg`)),
-        url: printUrl, type: 'print', filename: base, created_at: new Date().toISOString(),
+
+      // Save composite to DB
+      savePhoto({
+        session_id: activeSession?.id,
+        username,
+        type: 'print',
+        url: printUrl,
+        raw_urls: rawUrls,
+        created_at: new Date().toISOString()
       })
-      if (session?.id) {
-        const { error: rpcError } = await supabase.rpc('increment_photo_count', { session_id: session.id })
+      
+      if (activeSession?.id) {
+        const { error: rpcError } = await supabase.rpc('increment_photo_count', { session_id: activeSession.id })
         if (rpcError) console.error('RPC Error:', rpcError)
       }
       setUploadProgress(100)
@@ -224,7 +284,7 @@ export default function Booth({ session, onBack }) {
     } catch (e) {
       console.error(e)
       setUploadStatus('error')
-      addToQueue({ rawPhotos, composite, username, session, timestamp: Date.now() })
+      addToQueue({ rawPhotos, composite, username, session: activeSession, timestamp: Date.now() })
       toast.error('Upload failed — saved to offline queue')
     }
   }
@@ -255,9 +315,55 @@ export default function Booth({ session, onBack }) {
   }
 
   // ENTER NAME SCREEN
-  if (step === STEPS.ENTER_NAME) {
+  if (step === STEPS.ATTRACT || step === STEPS.ENTER_NAME || step === STEPS.CHOOSE_TEMPLATE) {
     return (
-      <div className="flex items-center justify-center min-h-screen px-4">
+      <div className="relative w-full h-full min-h-screen">
+        <AnimatePresence>
+          {step === STEPS.ATTRACT && (
+            <motion.div 
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center cursor-pointer"
+              style={{ background: 'var(--bg-primary)' }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setStep(STEPS.ENTER_NAME)}
+            >
+              <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 2 }}>
+                <Camera size={64} className="mb-6 text-purple-500 mx-auto drop-shadow-[0_0_15px_rgba(168,85,247,0.5)]" />
+              </motion.div>
+              <h1 className="text-5xl md:text-7xl font-bold mb-6 text-center drop-shadow-xl" style={{ fontFamily: 'Space Grotesk' }}>PHOTOBOOTH</h1>
+              <p className="text-xl md:text-2xl text-purple-400 animate-pulse uppercase tracking-widest font-semibold text-center">
+                Touch anywhere to start
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {step === STEPS.CHOOSE_TEMPLATE && kioskSessions && (
+          <div className="flex flex-col items-center justify-center min-h-screen p-6 w-full relative z-10 animate-fade-in">
+            <button onClick={() => setStep(STEPS.ENTER_NAME)} className="absolute top-8 left-8 flex items-center gap-2 text-sm btn-secondary px-4 py-2 rounded-xl">
+              <ChevronLeft size={16} /> Back
+            </button>
+            <h2 className="text-3xl font-bold mb-8 text-center" style={{ fontFamily: 'Space Grotesk' }}>Pilih Frame Sesukamu!</h2>
+            <div className="flex flex-wrap justify-center gap-6 max-w-5xl">
+              {kioskSessions.map(s => (
+                <motion.div key={s.id}
+                  className="glass p-4 rounded-3xl cursor-pointer hover:border-purple-500 transition-all border-2 border-transparent"
+                  onClick={() => { setActiveSession(s); setStep(STEPS.PREVIEW) }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <div className="bg-black/50 rounded-2xl p-2 mb-3">
+                    <img src={s.overlay_url} className="h-56 md:h-80 w-auto object-contain mx-auto" alt={s.name} />
+                  </div>
+                  <p className="text-center font-bold text-lg">{s.name}</p>
+                  <p className="text-center text-xs text-gray-400 capitalize">{s.layout.replace('_', ' ')}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === STEPS.ENTER_NAME && (
+          <div className="flex items-center justify-center min-h-screen px-4 animate-fade-in">
         <motion.div className="glass p-10 w-full max-w-md text-center"
           initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
           {onBack && (
@@ -269,7 +375,7 @@ export default function Booth({ session, onBack }) {
             <Camera size={36} />
           </div>
           <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk' }}>
-            <span className="gradient-text">{session?.name || 'Photobooth'}</span>
+            <span className="gradient-text">{activeSession?.name || 'Photobooth'}</span>
           </h1>
           <p className="text-sm mb-8" style={{ color: 'var(--text-muted)' }}>Enter your name to begin</p>
           <div className="relative mb-6">
@@ -277,7 +383,7 @@ export default function Booth({ session, onBack }) {
             <input className="input-glass w-full pl-10 pr-4 py-4 rounded-xl text-sm text-center"
               placeholder="Your name..." value={username}
               onChange={e => setUsername(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && username.trim() && setStep(STEPS.PREVIEW)}
+              onKeyDown={e => e.key === 'Enter' && username.trim() && setStep(kioskSessions?.length > 1 ? STEPS.CHOOSE_TEMPLATE : STEPS.PREVIEW)}
               autoFocus />
           </div>
           <div className="grid grid-cols-2 gap-4 mb-8">
@@ -301,15 +407,17 @@ export default function Booth({ session, onBack }) {
             </div>
           </div>
           <motion.button className="btn-primary w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2"
-            onClick={() => username.trim() && setStep(STEPS.PREVIEW)}
+            onClick={() => username.trim() && setStep(kioskSessions?.length > 1 ? STEPS.CHOOSE_TEMPLATE : STEPS.PREVIEW)}
             disabled={!username.trim()} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <Camera size={18} /> Start Session
           </motion.button>
           <p className="text-xs mt-4" style={{ color: 'var(--text-muted)' }}>
-            {totalShots} photos • {shotDelay}s countdown • {session?.layout === '4x6' ? '4×6' : 'Strip'}
+            {totalShots} photos • {shotDelay}s countdown • {activeSession?.layout === '4x6' ? '4×6' : 'Strip'}
           </p>
         </motion.div>
       </div>
+      )}
+    </div>
     )
   }
 
@@ -326,7 +434,7 @@ export default function Booth({ session, onBack }) {
             <button onClick={onBack} className="btn-secondary p-2 rounded-lg"><ChevronLeft size={16} /></button>
           )}
           <div>
-            <h2 className="font-bold text-sm" style={{ fontFamily: 'Space Grotesk' }}>{session?.name || 'Booth'}</h2>
+            <h2 className="font-bold text-sm" style={{ fontFamily: 'Space Grotesk' }}>{activeSession?.name || 'Booth'}</h2>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>@{username}</p>
           </div>
         </div>
@@ -396,7 +504,7 @@ export default function Booth({ session, onBack }) {
                 screenshotQuality={0.95}
                 videoConstraints={videoConstraints}
                 mirrored={cameraFacing === 'user'}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1 }}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, filter: activeFilter }}
               />
 
               {/* Shot progress bar at top */}
@@ -460,14 +568,14 @@ export default function Booth({ session, onBack }) {
           style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-glass)' }}>
           <div className="flex-1 p-4 overflow-y-auto max-h-60 md:max-h-none">
             {/* Template Live Preview */}
-            {session?.overlay_url && session?.photo_slots?.length > 0 ? (
+            {activeSession?.overlay_url && activeSession?.photo_slots?.length > 0 ? (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
                   Preview Template
                 </p>
                 <div className="relative rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '2/3' }}>
-                  <img src={session.overlay_url} className="absolute inset-0 w-full h-full object-contain z-10 pointer-events-none" />
-                  {session.photo_slots.map((slot, i) => {
+                  <img src={activeSession.overlay_url} className="absolute inset-0 w-full h-full object-contain z-10 pointer-events-none" />
+                  {activeSession.photo_slots.map((slot, i) => {
                     const captured = capturedPhotos[i]
                     const isActive = i === shotIndex && step !== STEPS.RESULT && step !== STEPS.PROCESSING
                     return (
@@ -500,7 +608,7 @@ export default function Booth({ session, onBack }) {
                   })}
                 </div>
                 <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-muted)' }}>
-                  {capturedPhotos.length}/{session.photo_slots.length} foto diambil
+                  {capturedPhotos.length}/{activeSession.photo_slots.length} foto diambil
                 </p>
               </div>
             ) : (
@@ -580,9 +688,18 @@ export default function Booth({ session, onBack }) {
               </>
             ) : step === STEPS.PREVIEW ? (
               <>
+                <div className="flex gap-2 overflow-x-auto mb-2 pb-1 no-scrollbar">
+                  {FILTERS.map(f => (
+                    <button key={f.id} 
+                      onClick={() => setActiveFilter(f.css)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border ${activeFilter === f.css ? 'bg-purple-500 border-purple-400 text-white' : 'bg-black/20 border-white/10 text-white/70 hover:bg-white/10'}`}>
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
                 {devices.length > 1 && (
                   <select
-                    className="input-glass w-full py-2.5 px-3 rounded-xl text-xs mb-1"
+                    className="input-glass w-full py-2.5 px-3 rounded-xl text-xs mb-2"
                     value={selectedDeviceId || ''}
                     onChange={(e) => setSelectedDeviceId(e.target.value)}
                   >
@@ -640,14 +757,14 @@ export default function Booth({ session, onBack }) {
         </div>
       </Modal>
 
-      <Modal isOpen={showQRModal} onClose={() => setShowQRModal(false)} title="Share QR Code" size="sm">
-        <div className="text-center space-y-4">
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Scan to download your photos</p>
-          <div className="qr-container mx-auto w-fit">
-            <QRCodeSVG value={`${window.location.origin}/?share=${session?.id}&user=${encodeURIComponent(username || '')}`} size={200} level="H" />
-          </div>
-          <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?share=${session?.id}&user=${encodeURIComponent(username || '')}`); toast.success('Copied!') }}
-            className="w-full btn-secondary py-3 rounded-xl text-sm">Copy Link</button>
+      <Modal isOpen={showQRModal} onClose={() => setShowQRModal(false)} title="Scan & Download" size="sm">
+        <div className="space-y-4 text-center">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Scan untuk mengunduh foto Anda!</p>
+          {activeSession && username && (
+            <div className="qr-container bg-white p-4 rounded-xl w-fit mx-auto">
+              <QRCodeSVG value={`${window.location.origin}/?share=${activeSession.id}&user=${encodeURIComponent(username)}`} size={200} level="H" />
+            </div>
+          )}
         </div>
       </Modal>
     </div>

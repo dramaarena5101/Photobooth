@@ -19,7 +19,7 @@ const defaultForm = {
   layout: 'strip', watermark: '', status: 'active', photo_count: 0, overlay_url: ''
 }
 
-export default function Sessions({ onStartBooth }) {
+export default function Sessions({ onStartBooth, onStartKiosk }) {
   const { sessions, fetchSessions, createSession, updateSession, deleteSession, sessionsLoading, setActiveRoute, setGalleryFilterSession } = useAppStore()
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
@@ -135,15 +135,33 @@ export default function Sessions({ onStartBooth }) {
             Manage your photobooth event sessions
           </p>
         </div>
-        <motion.button
-          className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
-          onClick={openCreate}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <Plus size={16} />
-          New Session
-        </motion.button>
+        <div className="flex gap-2">
+          <motion.button
+            className="btn-secondary flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border border-white/10"
+            onClick={() => {
+              const activeSessions = sessions.filter(s => s.status === 'active')
+              if (activeSessions.length === 0) {
+                toast.error('Tidak ada sesi aktif untuk mode Kiosk')
+                return
+              }
+              onStartKiosk(activeSessions)
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Camera size={16} />
+            Start Kiosk
+          </motion.button>
+          <motion.button
+            className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm"
+            onClick={openCreate}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <Plus size={16} />
+            New Session
+          </motion.button>
+        </div>
       </div>
 
       {/* Filters */}

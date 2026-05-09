@@ -21,6 +21,7 @@ const pageVariants = {
 export default function App() {
   const { isAdmin, sidebarOpen, activeRoute, setActiveRoute, logout, inactivityTimeout } = useAppStore()
   const [boothSession, setBoothSession] = useState(null)
+  const [kioskSessions, setKioskSessions] = useState(null)
 
   // Check for public share URL: ?share=sessionId&user=username
   const urlParams = new URLSearchParams(window.location.search)
@@ -58,11 +59,21 @@ export default function App() {
 
   const handleNavigate = (route) => {
     setActiveRoute(route)
-    if (route !== 'booth') setBoothSession(null)
+    if (route !== 'booth') {
+      setBoothSession(null)
+      setKioskSessions(null)
+    }
   }
 
   const handleStartBooth = (session) => {
     setBoothSession(session)
+    setKioskSessions(null)
+    setActiveRoute('booth')
+  }
+
+  const handleStartKiosk = (sessions) => {
+    setKioskSessions(sessions)
+    setBoothSession(null)
     setActiveRoute('booth')
   }
 
@@ -79,12 +90,12 @@ export default function App() {
   const renderPage = () => {
     switch (activeRoute) {
       case 'dashboard': return <Dashboard />
-      case 'sessions': return <Sessions onStartBooth={handleStartBooth} />
+      case 'sessions': return <Sessions onStartBooth={handleStartBooth} onStartKiosk={handleStartKiosk} />
       case 'booth':
-        if (boothSession) return (
-          <Booth session={boothSession} onBack={() => { setBoothSession(null); setActiveRoute('sessions') }} />
+        if (boothSession || kioskSessions) return (
+          <Booth session={boothSession} kioskSessions={kioskSessions} onBack={() => { setBoothSession(null); setKioskSessions(null); setActiveRoute('sessions') }} />
         )
-        return <Sessions onStartBooth={handleStartBooth} />
+        return <Sessions onStartBooth={handleStartBooth} onStartKiosk={handleStartKiosk} />
       case 'gallery': return <Gallery />
       case 'settings': return <Settings />
       default: return <Dashboard />
@@ -92,7 +103,7 @@ export default function App() {
   }
 
   // Booth is fullscreen - no sidebar
-  const isBooth = activeRoute === 'booth' && boothSession
+  const isBooth = activeRoute === 'booth' && (boothSession || kioskSessions)
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
