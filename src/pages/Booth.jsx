@@ -7,7 +7,7 @@ import Modal from '../components/Modal'
 import {
   Camera, X, Maximize2, Minimize2, RotateCcw, Download,
   Printer, Share2, ChevronLeft, Zap, CheckCircle,
-  Upload, WifiOff, User
+  Upload, WifiOff, User, RefreshCw
 } from 'lucide-react'
 import { uploadToStorage, getPublicUrl, dataURLtoBlob, blobToFile, sleep, playShutterSound, playBeep } from '../utils/helpers'
 import { generatePhotoComposite } from '../utils/canvasEngine'
@@ -71,6 +71,7 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
   const [customProps, setCustomProps] = useState([])
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [detections, setDetections] = useState(null)
+  const [cameraError, setCameraError] = useState(null)
   const webcamRef = useRef(null)
   const containerRef = useRef(null)
   const captureRef = useRef(false)
@@ -78,9 +79,11 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
 
   const isStrip = activeSession?.layout === 'strip'
   const videoConstraints = {
-    width: isStrip ? { ideal: 720 } : { ideal: 1280 },
-    height: isStrip ? { ideal: 1280 } : { ideal: 720 },
-    ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : { facingMode: cameraFacing })
+    facingMode: cameraFacing,
+    ...(selectedDeviceId && { deviceId: { exact: selectedDeviceId } }),
+    // Use smaller ideal resolution for better compatibility across mobile devices
+    width: { ideal: 1280 },
+    height: { ideal: 720 }
   }
 
   const resetToAttract = useCallback(() => {
@@ -155,6 +158,15 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
       navigator.mediaDevices.removeEventListener('devicechange', refreshDevices)
     }
   }, [handleDevices])
+
+  const flipCamera = () => {
+    if (devices.length < 2) return
+    const currentIndex = devices.findIndex(d => d.deviceId === selectedDeviceId)
+    const nextIndex = (currentIndex + 1) % devices.length
+    setSelectedDeviceId(devices[nextIndex].deviceId)
+    // Toggle facingMode logic as backup
+    setCameraFacing(prev => prev === 'user' ? 'environment' : 'user')
+  }
 
   // Load face-api models
   useEffect(() => {
@@ -717,12 +729,32 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
               <Webcam
                 ref={webcamRef}
                 audio={false}
+                onUserMedia={() => setCameraError(null)}
+                onUserMediaError={(err) => {
+                  console.error("Webcam Error:", err)
+                  setCameraError(err.message || "Gagal mengakses kamera")
+                }}
                 screenshotFormat="image/jpeg"
                 screenshotQuality={0.95}
                 videoConstraints={videoConstraints}
                 mirrored={cameraFacing === 'user'}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, filter: activeFilter }}
+                style={{ 
+                  position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
+                  objectFit: 'cover', zIndex: 1, 
+                  filter: activeFilter === 'none' ? 'unset' : activeFilter 
+                }}
               />
+
+              {cameraError && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/80 p-6 text-center">
+                  <WifiOff size={48} className="text-red-500 mb-4" />
+                  <p className="text-white font-bold mb-2">Kamera Bermasalah</p>
+                  <p className="text-white/60 text-sm">{cameraError}</p>
+                  <button onClick={() => window.location.reload()} className="btn-primary mt-4 px-4 py-2 rounded-lg text-xs">
+                    Refresh Halaman
+                  </button>
+                </div>
+              )}
 
               {activeProp && activeProp.id !== 'none' && (
                 <div style={getPropStyles()}>
@@ -941,9 +973,9 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
                   </div>
                 </div>
                 
-                {devices.length > 1 && (
+                <div className="flex gap-2 mb-2">
                   <select
-                    className="input-glass w-full py-2.5 px-3 rounded-xl text-xs mb-2"
+                    className="input-glass flex-1 py-2.5 px-3 rounded-xl text-xs"
                     value={selectedDeviceId || ''}
                     onChange={(e) => setSelectedDeviceId(e.target.value)}
                   >
@@ -953,7 +985,12 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
                       </option>
                     ))}
                   </select>
-                )}
+                  {devices.length > 1 && (
+                    <button onClick={flipCamera} className="btn-secondary p-2.5 rounded-xl flex items-center justify-center" title="Flip Camera">
+                      <RefreshCw size={16} />
+                    </button>
+                  )}
+                </div>
                 <motion.button className="btn-primary w-full py-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2"
                   onClick={startCapture} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                   <Zap size={16} /> Start Capture
