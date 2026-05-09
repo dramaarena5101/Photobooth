@@ -120,8 +120,22 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
   }, [])
 
   const handleDevices = useCallback(
-    (mediaDevices) => {
-      const videoDevices = mediaDevices.filter(({ kind }) => kind === 'videoinput')
+    async (mediaDevices) => {
+      let videoDevices = mediaDevices.filter(({ kind }) => kind === 'videoinput')
+      
+      // If labels are empty, it's usually because permissions aren't granted yet
+      if (videoDevices.length > 0 && !videoDevices[0].label) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          videoDevices = devices.filter(({ kind }) => kind === 'videoinput')
+          // Stop the temporary stream
+          stream.getTracks().forEach(track => track.stop())
+        } catch (e) {
+          console.error("Permission denied or error fetching labels:", e)
+        }
+      }
+      
       setDevices(videoDevices)
       if (videoDevices.length > 0 && !selectedDeviceId) {
         setSelectedDeviceId(videoDevices[0].deviceId)
@@ -131,7 +145,15 @@ export default function Booth({ session: initialSession, kioskSessions, onBack }
   )
 
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then(handleDevices)
+    const refreshDevices = () => {
+      navigator.mediaDevices.enumerateDevices().then(handleDevices)
+    }
+    
+    refreshDevices()
+    navigator.mediaDevices.addEventListener('devicechange', refreshDevices)
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', refreshDevices)
+    }
   }, [handleDevices])
 
   // Load face-api models
