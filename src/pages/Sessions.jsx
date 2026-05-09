@@ -4,11 +4,12 @@ import { useAppStore } from '../store/useAppStore'
 import Modal from '../components/Modal'
 import {
   Plus, Search, Filter, Edit2, Trash2, ExternalLink,
-  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown, Images, Upload
+  FolderOpen, Eye, EyeOff, Copy, Check, Camera, ChevronDown, Images, Upload, Layout
 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { uploadToStorage, getPublicUrl } from '../utils/helpers'
+import TemplateEditor from '../components/TemplateEditor'
 
 const TEMPLATES = ['classic', 'gradient', 'dark', 'minimal', 'neon']
 const LAYOUTS = ['strip', '4x6']
@@ -30,6 +31,7 @@ export default function Sessions({ onStartBooth }) {
   const [copiedId, setCopiedId] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [uploadingTemplate, setUploadingTemplate] = useState(false)
+  const [layoutEditorSession, setLayoutEditorSession] = useState(null) // session being edited in canvas
 
   useEffect(() => { fetchSessions() }, [])
 
@@ -112,6 +114,13 @@ export default function Sessions({ onStartBooth }) {
       toast.error('Failed to upload template')
     }
     setUploadingTemplate(false)
+  }
+
+  const handleSaveSlots = async (slots) => {
+    if (!layoutEditorSession) return
+    await updateSession(layoutEditorSession.id, { photo_slots: slots })
+    setLayoutEditorSession(null)
+    toast.success('Layout foto disimpan ke sesi!')
   }
 
   return (
@@ -264,6 +273,17 @@ export default function Sessions({ onStartBooth }) {
                           >
                             <Images size={13} />
                           </motion.button>
+                          {session.overlay_url && (
+                            <motion.button
+                              onClick={() => setLayoutEditorSession(session)}
+                              className="p-2 rounded-lg transition-all"
+                              style={{ padding: '6px 8px', background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}
+                              title="Layout Editor (atur posisi foto)"
+                              whileHover={{ scale: 1.1 }}
+                            >
+                              <Layout size={13} />
+                            </motion.button>
+                          )}
                           <motion.button
                             onClick={() => openEdit(session)}
                             className="p-2 rounded-lg btn-secondary"
@@ -441,6 +461,19 @@ export default function Sessions({ onStartBooth }) {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Template Layout Editor Modal */}
+      <Modal isOpen={!!layoutEditorSession} onClose={() => setLayoutEditorSession(null)}
+        title={`Layout Editor — ${layoutEditorSession?.name || ''}`} size="xl">
+        {layoutEditorSession && (
+          <TemplateEditor
+            overlayUrl={layoutEditorSession.overlay_url}
+            initialSlots={layoutEditorSession.photo_slots || []}
+            onSave={handleSaveSlots}
+            onClose={() => setLayoutEditorSession(null)}
+          />
+        )}
       </Modal>
     </div>
   )

@@ -9,9 +9,8 @@ import {
   Printer, Share2, ChevronLeft, Zap, CheckCircle,
   Upload, WifiOff, User
 } from 'lucide-react'
-import { playShutterSound, playBeep, dataURLtoBlob, blobToFile, sleep } from '../utils/helpers'
+import { uploadToStorage, getPublicUrl, dataURLtoBlob, blobToFile, sleep, playShutterSound, playBeep } from '../utils/helpers'
 import { generatePhotoComposite } from '../utils/canvasEngine'
-import { uploadToStorage, getPublicUrl } from '../utils/helpers'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
@@ -39,11 +38,18 @@ export default function Booth({ session, onBack }) {
   const [shotDelay, setShotDelay] = useState(3)
   const [totalShots, setTotalShots] = useState(3)
   const [cameraFacing, setCameraFacing] = useState('user')
+  const [templateLoaded, setTemplateLoaded] = useState(false)
+  const [retakeSlot, setRetakeSlot] = useState(null) // null means normal, number means retaking that slot
   const webcamRef = useRef(null)
   const containerRef = useRef(null)
   const captureRef = useRef(false)
 
-  const videoConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: cameraFacing }
+  const isStrip = session?.layout === 'strip'
+  const videoConstraints = {
+    width: isStrip ? { ideal: 720 } : { ideal: 1280 },
+    height: isStrip ? { ideal: 1280 } : { ideal: 720 },
+    facingMode: cameraFacing
+  }
 
   const toggleFullscreen = () => {
     if (!fullscreen) { containerRef.current?.requestFullscreen?.(); setFullscreen(true) }
@@ -59,23 +65,47 @@ export default function Booth({ session, onBack }) {
   const startCapture = async () => {
     if (captureRef.current) return
     captureRef.current = true
+
+    // If retaking a specific slot
+    if (retakeSlot !== null) {
+      setShotIndex(retakeSlot)
+      for (let c = shotDelay; c >= 1; c--) {
+        setCountdown(c); playBeep(c === 1 ? 900 : 600)
+        setStep(STEPS.COUNTDOWN); await sleep(1000)
+      }
+      setCountdown(null); setStep(STEPS.CAPTURING)
+      setFlashActive(true); playShutterSound(); await sleep(80)
+      const rawImg = webcamRef.current?.getScreenshot()
+      setFlashActive(false)
+      if (rawImg) {
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5)
+        setCapturedPhotos(prev => {
+          const next = [...prev]
+          next[retakeSlot] = croppedImg
+          return next
+        })
+      }
+      setRetakeSlot(null); captureRef.current = false
+      setStep(STEPS.PREVIEW); return
+    }
+
+    // Normal: capture all shots
     const photos = []
     for (let shot = 0; shot < totalShots; shot++) {
       setShotIndex(shot)
       for (let c = shotDelay; c >= 1; c--) {
-        setCountdown(c)
-        playBeep(c === 1 ? 900 : 600)
-        setStep(STEPS.COUNTDOWN)
-        await sleep(1000)
+        setCountdown(c); playBeep(c === 1 ? 900 : 600)
+        setStep(STEPS.COUNTDOWN); await sleep(1000)
       }
-      setCountdown(null)
-      setStep(STEPS.CAPTURING)
-      setFlashActive(true)
-      playShutterSound()
-      await sleep(80)
-      const img = webcamRef.current?.getScreenshot()
+      setCountdown(null); setStep(STEPS.CAPTURING)
+      setFlashActive(true); playShutterSound(); await sleep(80)
+      const rawImg = webcamRef.current?.getScreenshot()
       setFlashActive(false)
-      if (img) { photos.push(img); setCapturedPhotos([...photos]) }
+      if (rawImg) {
+        const croppedImg = await cropToPreview(rawImg, isStrip ? 1.38 : 1.5)
+        photos.push(croppedImg)
+        setCapturedPhotos([...photos])
+      }
       if (shot < totalShots - 1) await sleep(800)
     }
     setStep(STEPS.PROCESSING)
@@ -86,10 +116,55 @@ export default function Booth({ session, onBack }) {
       await handleUpload(photos, composite)
       setStep(STEPS.RESULT)
     } catch (e) {
-      console.error(e)
-      toast.error('Processing failed')
-      setStep(STEPS.RESULT)
+      console.error('CAPTURE ERROR:', e)
+      toast.error('Processing failed: ' + e.message)
+      setStep(STEPS.PREVIEW)
     }
+  }
+
+  const handleRetake = (idx) => {
+    setRetakeSlot(idx)
+    setStep(STEPS.PREVIEW)
+    toast(`Retake foto #${idx + 1} — tekan Start Capture`, { icon: '📸' })
+  }
+
+  const cropToPreview = (dataUrl, targetRatio) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          
+          let sourceW = img.width
+          let sourceH = img.height
+          const sourceRatio = sourceW / sourceH
+          
+          let targetW, targetH, offsetX, offsetY
+          
+          if (sourceRatio > targetRatio) {
+            targetH = sourceH
+            targetW = sourceH * targetRatio
+            offsetX = (sourceW - targetW) / 2
+            offsetY = 0
+          } else {
+            targetW = sourceW
+            targetH = sourceW / targetRatio
+            offsetX = 0
+            offsetY = (sourceH - targetH) / 2
+          }
+          
+          const targetW_internal = isStrip ? 552 : 900
+          canvas.width = targetW_internal
+          canvas.height = canvas.width / targetRatio
+          
+          ctx.drawImage(img, offsetX, offsetY, targetW, targetH, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', 0.95))
+        } catch (err) { reject(err) }
+      }
+      img.onerror = () => reject(new Error('Failed to load captured image'))
+      img.src = dataUrl
+    })
   }
 
   const handleUpload = async (rawPhotos, composite) => {
@@ -291,9 +366,55 @@ export default function Booth({ session, onBack }) {
           </AnimatePresence>
 
           {step !== STEPS.RESULT ? (
-            <Webcam ref={webcamRef} audio={false} screenshotFormat="image/jpeg" screenshotQuality={0.95}
-              videoConstraints={videoConstraints} className="w-full h-full object-cover"
-              mirrored={cameraFacing === 'user'} />
+            <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
+              {/* Full-Screen Camera Feed */}
+              <Webcam
+                ref={webcamRef}
+                audio={false}
+                screenshotFormat="image/jpeg"
+                screenshotQuality={0.95}
+                videoConstraints={videoConstraints}
+                mirrored={cameraFacing === 'user'}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1 }}
+              />
+
+              {/* Shot progress bar at top */}
+              <div className="absolute top-0 left-0 right-0 z-20 flex"
+                style={{ height: 4, background: 'rgba(0,0,0,0.3)' }}>
+                {Array.from({ length: totalShots }).map((_, i) => (
+                  <div key={i} style={{
+                    flex: 1, height: '100%', marginRight: 2,
+                    background: i < capturedPhotos.length ? '#10b981'
+                      : i === shotIndex && (step === STEPS.COUNTDOWN || step === STEPS.CAPTURING) ? '#a855f7'
+                      : 'rgba(255,255,255,0.2)',
+                    transition: 'background 0.3s'
+                  }} />
+                ))}
+              </div>
+
+              {/* Guide text bottom */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2">
+                <div className="px-4 py-2 bg-black/70 backdrop-blur-md rounded-full border border-white/10 text-xs text-white/80 flex items-center gap-2">
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: step === STEPS.COUNTDOWN || step === STEPS.CAPTURING ? '#ef4444' : '#10b981',
+                    display: 'inline-block',
+                    boxShadow: step === STEPS.CAPTURING ? '0 0 6px #ef4444' : 'none'
+                  }} />
+                  {capturedPhotos.length < totalShots
+                    ? `Foto ${capturedPhotos.length + 1} dari ${totalShots} — lihat preview di kanan`
+                    : 'Semua foto diambil — cek preview di kanan'}
+                </div>
+              </div>
+
+              {/* Corner frame guides */}
+              <div className="absolute z-10 pointer-events-none" style={{ inset: '10%' }}>
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2" style={{ borderColor: 'rgba(168,85,247,0.6)' }} />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2" style={{ borderColor: 'rgba(168,85,247,0.6)' }} />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2" style={{ borderColor: 'rgba(168,85,247,0.6)' }} />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2" style={{ borderColor: 'rgba(168,85,247,0.6)' }} />
+              </div>
+            </div>
           ) : (
             <div className="flex items-center justify-center w-full h-full p-8">
               <motion.img src={compositeUrl} alt="Result" className="max-h-full max-w-full rounded-2xl object-contain"
@@ -317,27 +438,84 @@ export default function Booth({ session, onBack }) {
         <div className="w-full md:w-72 flex flex-col flex-shrink-0 border-t md:border-t-0 md:border-l"
           style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-glass)' }}>
           <div className="flex-1 p-4 overflow-y-auto max-h-60 md:max-h-none">
-            <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-              Captures ({capturedPhotos.length}/{totalShots})
-            </p>
-            <div className="space-y-3">
-              <AnimatePresence>
-                {capturedPhotos.map((photo, i) => (
-                  <motion.div key={i} className="relative rounded-xl overflow-hidden cursor-pointer"
-                    style={{ aspectRatio: '4/3' }}
-                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-                    <img src={photo} alt={`Shot ${i + 1}`} className="w-full h-full object-cover" />
-                    <div className="absolute top-2 left-2 badge badge-purple" style={{ fontSize: 10 }}>#{i + 1}</div>
-                  </motion.div>
-                ))}
-                {Array(Math.max(0, totalShots - capturedPhotos.length)).fill(0).map((_, i) => (
-                  <div key={`e${i}`} className="rounded-xl flex items-center justify-center"
-                    style={{ aspectRatio: '4/3', background: 'rgba(255,255,255,0.03)', border: '2px dashed rgba(255,255,255,0.1)' }}>
-                    <Camera size={18} style={{ color: 'rgba(255,255,255,0.2)' }} />
-                  </div>
-                ))}
-              </AnimatePresence>
-            </div>
+            {/* Template Live Preview */}
+            {session?.overlay_url && session?.photo_slots?.length > 0 ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
+                  Preview Template
+                </p>
+                <div className="relative rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '2/3' }}>
+                  <img src={session.overlay_url} className="absolute inset-0 w-full h-full object-contain z-10 pointer-events-none" />
+                  {session.photo_slots.map((slot, i) => {
+                    const captured = capturedPhotos[i]
+                    const isActive = i === shotIndex && step !== STEPS.RESULT && step !== STEPS.PROCESSING
+                    return (
+                      <div key={i} style={{
+                        position: 'absolute',
+                        left: `${slot.x}%`, top: `${slot.y}%`,
+                        width: `${slot.w}%`, height: `${slot.h}%`,
+                        zIndex: 5, overflow: 'hidden'
+                      }}>
+                        {captured ? (
+                          <img src={captured} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center"
+                            style={{ background: isActive ? 'rgba(168,85,247,0.25)' : 'rgba(0,0,0,0.4)', border: `2px solid ${isActive ? '#a855f7' : 'rgba(255,255,255,0.1)'}` }}>
+                            {isActive ? <span className="text-purple-400 text-xs font-bold animate-pulse">● LIVE</span>
+                              : <Camera size={14} style={{ color: 'rgba(255,255,255,0.2)' }} />}
+                          </div>
+                        )}
+                        {captured && step === STEPS.PREVIEW && (
+                          <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button onClick={() => handleRetake(i)}
+                              className="px-2 py-1 rounded text-xs font-bold flex items-center gap-1"
+                              style={{ background: '#a855f7', color: '#fff' }}>
+                              <RotateCcw size={10} /> Retake
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="text-xs mt-2 text-center" style={{ color: 'var(--text-muted)' }}>
+                  {capturedPhotos.length}/{session.photo_slots.length} foto diambil
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
+                  Captures ({capturedPhotos.length}/{totalShots})
+                </p>
+                <div className="space-y-3">
+                  <AnimatePresence>
+                    {capturedPhotos.map((photo, i) => (
+                      <motion.div key={i} className="relative rounded-xl overflow-hidden group"
+                        style={{ aspectRatio: '4/3' }}
+                        initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+                        <img src={photo} alt={`Shot ${i + 1}`} className="w-full h-full object-cover" />
+                        <div className="absolute top-2 left-2 badge badge-purple" style={{ fontSize: 10 }}>#{i + 1}</div>
+                        {step === STEPS.PREVIEW && (
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button onClick={() => handleRetake(i)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"
+                              style={{ background: '#a855f7', color: '#fff' }}>
+                              <RotateCcw size={11} /> Retake
+                            </button>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                    {Array(Math.max(0, totalShots - capturedPhotos.length)).fill(0).map((_, i) => (
+                      <div key={`e${i}`} className="rounded-xl flex items-center justify-center"
+                        style={{ aspectRatio: '4/3', background: 'rgba(255,255,255,0.03)', border: '2px dashed rgba(255,255,255,0.1)' }}>
+                        <Camera size={18} style={{ color: 'rgba(255,255,255,0.2)' }} />
+                      </div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
             {uploadStatus && (
               <motion.div className="mt-4 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)' }}
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

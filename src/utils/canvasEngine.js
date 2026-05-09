@@ -32,7 +32,6 @@ export const drawPortraitStrip = async (photos, options = {}) => {
   canvas.width = width
   canvas.height = totalHeight
   const ctx = canvas.getContext('2d')
-  const isCustom = !!options.overlay_url
 
   // Background
   if (isCustom) {
@@ -271,17 +270,70 @@ const roundRect = (ctx, x, y, w, h, r) => {
 
 // Generate composite photo
 export const generatePhotoComposite = async (rawPhotos, session, username) => {
-  const { layout = 'strip', template = 'classic', watermark = '', overlay_url = '' } = session || {}
+  const { layout = 'strip', template = 'classic', watermark = '', overlay_url = '', photo_slots = null } = session || {}
+
+  // If custom slots are defined, use them
+  if (overlay_url && photo_slots && photo_slots.length > 0) {
+    return await drawWithCustomSlots(rawPhotos, overlay_url, photo_slots)
+  }
+
   const options = {
     title: session?.name || 'Photobooth',
     date: new Date().toLocaleDateString('id-ID', { dateStyle: 'long' }),
-    watermark,
-    template,
-    overlay_url,
+    watermark, template, overlay_url,
     borderColor: '#a855f7',
   }
-  if (layout === '4x6') {
-    return await draw4x6Layout(rawPhotos, options)
-  }
+  if (layout === '4x6') return await draw4x6Layout(rawPhotos, options)
   return await drawPortraitStrip(rawPhotos, options)
+}
+
+// Draw photos at exact slot positions defined by TemplateEditor
+export const drawWithCustomSlots = async (photos, overlayUrl, slots) => {
+  // Load overlay to get its natural size
+  const overlayImg = await loadImage(overlayUrl)
+  const W = overlayImg.naturalWidth || 600
+  const H = overlayImg.naturalHeight || 1200
+
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+
+  // White background
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, W, H)
+
+  // Draw photos into each slot (slots are % values)
+  for (let i = 0; i < Math.min(photos.length, slots.length); i++) {
+    const slot = slots[i]
+    const sx = (slot.x / 100) * W
+    const sy = (slot.y / 100) * H
+    const sw = (slot.w / 100) * W
+    const sh = (slot.h / 100) * H
+
+    const img = await loadImage(photos[i])
+
+    // Center-crop the photo to fit the slot ratio
+    const slotRatio = sw / sh
+    const imgRatio = img.width / img.height
+    let srcX = 0, srcY = 0, srcW = img.width, srcH = img.height
+    if (imgRatio > slotRatio) {
+      srcW = img.height * slotRatio
+      srcX = (img.width - srcW) / 2
+    } else {
+      srcH = img.width / slotRatio
+      srcY = (img.height - srcH) / 2
+    }
+
+    ctx.save()
+    roundRect(ctx, sx, sy, sw, sh, 4)
+    ctx.clip()
+    ctx.drawImage(img, srcX, srcY, srcW, srcH, sx, sy, sw, sh)
+    ctx.restore()
+  }
+
+  // Draw overlay template on top
+  ctx.drawImage(overlayImg, 0, 0, W, H)
+
+  return canvas.toDataURL('image/jpeg', 0.93)
 }

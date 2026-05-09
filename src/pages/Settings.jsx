@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   layout TEXT DEFAULT 'strip',
   watermark TEXT DEFAULT '',
   overlay_url TEXT DEFAULT '',
+  photo_slots JSONB DEFAULT '[]',
   status TEXT DEFAULT 'active',
   photo_count INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
